@@ -28,9 +28,10 @@ import { PaymentController } from './payments.controller';
 import { PaymentService } from './payments.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../redis/redis.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
-  imports: [PrismaModule, RedisModule],
+  imports: [PrismaModule, RedisModule, NotificationModule],
   controllers: [PaymentController],
   providers: [PaymentService],
   exports: [PaymentService], // OrderModule can inject PaymentService

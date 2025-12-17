@@ -5,7 +5,13 @@
  *     Caching: Redis for user role lookups
  */
 
-import { Injectable, Logger, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreateUserDto, UserRole } from './dto/create-user.dto';
@@ -340,9 +346,7 @@ export class AdminService {
       totalUsers,
       activeUsers,
       inactiveUsers,
-      usersByRole: Object.fromEntries(
-        usersByRole.map((g) => [g.role, g._count.role]),
-      ),
+      usersByRole: Object.fromEntries(usersByRole.map((g) => [g.role, g._count.role])),
     };
 
     // [35] CACHE STATS FOR 10 MINUTES

@@ -28,12 +28,13 @@ import {
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminOnlyGuard } from './guards/admin-only.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ListUsersQueryDto } from './dto/list-users.dto';
 
 @Controller('admin')
-@UseGuards(JwtAuthGuard) // All endpoints require authentication
+@UseGuards(JwtAuthGuard, AdminOnlyGuard) // All endpoints require authentication + ADMIN role
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
@@ -46,14 +47,8 @@ export class AdminController {
    */
   @Post('users')
   @HttpCode(201)
-  async createUser(
-    @Body() createUserDto: CreateUserDto,
-    @Request() req: any,
-  ) {
-    // [3] TODO: ADD ROLE CHECK
-    //     Verify req.user.role === 'ADMIN' before allowing user creation
-    //     For now, relies on guard (can add custom @AdminOnly() decorator)
-
+  async createUser(@Body() createUserDto: CreateUserDto, @Request() req: any) {
+    // [3] ADMIN ROLE VERIFIED BY AdminOnlyGuard
     const user = await this.adminService.createUser(createUserDto);
     return {
       success: true,
@@ -70,12 +65,8 @@ export class AdminController {
    *     Use case: Admin views list of all users with filtering, sorting, pagination
    */
   @Get('users')
-  async listUsers(
-    @Query() query: ListUsersQueryDto,
-    @Request() req: any,
-  ) {
-    // [5] TODO: ADD ROLE CHECK
-
+  async listUsers(@Query() query: ListUsersQueryDto, @Request() req: any) {
+    // [5] ADMIN ROLE VERIFIED BY AdminOnlyGuard
     const result = await this.adminService.listUsers(query);
     return {
       success: true,
@@ -92,12 +83,8 @@ export class AdminController {
    *     Use case: Admin views single user's full details
    */
   @Get('users/:id')
-  async getUser(
-    @Param('id') userId: string,
-    @Request() req: any,
-  ) {
-    // [7] TODO: ADD ROLE CHECK
-
+  async getUser(@Param('id') userId: string, @Request() req: any) {
+    // [7] ADMIN ROLE VERIFIED BY AdminOnlyGuard
     const user = await this.adminService.getUserById(userId);
     return {
       success: true,
@@ -119,7 +106,7 @@ export class AdminController {
     @Body() updateUserDto: UpdateUserDto,
     @Request() req: any,
   ) {
-    // [9] TODO: ADD ROLE CHECK
+    // [9] ADMIN ROLE VERIFIED BY AdminOnlyGuard
 
     // [10] PREVENT SELF-DEMOTION
     //      If updating the current user, don't allow downgrading own role
@@ -152,7 +139,7 @@ export class AdminController {
     @Query('forceDelete') forceDelete: string,
     @Request() req: any,
   ) {
-    // [12] TODO: ADD ROLE CHECK
+    // [12] ADMIN ROLE VERIFIED BY AdminOnlyGuard
 
     // [13] PREVENT SELF-DELETION
     if (userId === req.user.id) {
@@ -178,12 +165,8 @@ export class AdminController {
    *      Use case: Admin quickly changes user's role (convenience endpoint)
    */
   @Post('users/:id/role')
-  async assignRole(
-    @Param('id') userId: string,
-    @Body('role') role: string,
-    @Request() req: any,
-  ) {
-    // [16] TODO: ADD ROLE CHECK
+  async assignRole(@Param('id') userId: string, @Body('role') role: string, @Request() req: any) {
+    // [16] ADMIN ROLE VERIFIED BY AdminOnlyGuard
 
     // [17] PREVENT SELF-DEMOTION
     if (userId === req.user.id) {
@@ -210,11 +193,8 @@ export class AdminController {
    *      Use case: Admin dashboard displays user statistics
    */
   @Get('stats')
-  async getAdminStats(
-    @Request() req: any,
-  ) {
-    // [19] TODO: ADD ROLE CHECK
-
+  async getAdminStats(@Request() req: any) {
+    // [19] ADMIN ROLE VERIFIED BY AdminOnlyGuard
     const stats = await this.adminService.getAdminStats();
     return {
       success: true,

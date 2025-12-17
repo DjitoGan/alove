@@ -6,12 +6,12 @@
 import { IsString, IsMobilePhone, IsOptional, IsEnum } from 'class-validator';
 
 export enum SMSTemplate {
-  OTP_CODE = 'otp_code',                          // [123456] is your OTP code
-  ORDER_CONFIRMATION = 'order_confirmation',      // Your order #12345 confirmed
-  PAYMENT_SUCCESS = 'payment_success',            // Payment received for order #12345
-  ORDER_SHIPPED = 'order_shipped',                // Your order #12345 shipped (tracking)
-  DELIVERY_UPDATE = 'delivery_update',            // Order arriving today
-  REFUND_PROCESSED = 'refund_processed',          // Refund of XOF 50,000 processed
+  OTP_CODE = 'otp_code', // [123456] is your OTP code
+  ORDER_CONFIRMATION = 'order_confirmation', // Your order #12345 confirmed
+  PAYMENT_SUCCESS = 'payment_success', // Payment received for order #12345
+  ORDER_SHIPPED = 'order_shipped', // Your order #12345 shipped (tracking)
+  DELIVERY_UPDATE = 'delivery_update', // Order arriving today
+  REFUND_PROCESSED = 'refund_processed', // Refund of XOF 50,000 processed
 }
 
 export class SendSmsDto {

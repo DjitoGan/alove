@@ -31,10 +31,7 @@ export class NotificationService {
    *       4. Store audit log in Prisma
    *       5. Return messageId
    */
-  async sendEmail(
-    sendEmailDto: SendEmailDto,
-    userId: string,
-  ): Promise<{ messageId: string }> {
+  async sendEmail(sendEmailDto: SendEmailDto, userId: string): Promise<{ messageId: string }> {
     // [3] RATE LIMITING VIA REDIS
     //     Key: email:user:{userId}:sent_count
     //     TTL: 60 seconds
@@ -48,9 +45,7 @@ export class NotificationService {
     }
 
     if (emailCount > 10) {
-      throw new BadRequestException(
-        'Rate limit exceeded: maximum 10 emails per minute',
-      );
+      throw new BadRequestException('Rate limit exceeded: maximum 10 emails per minute');
     }
 
     // [4] DEDUPLICATE VIA REDIS
@@ -59,7 +54,7 @@ export class NotificationService {
     //     Prevents sending same email twice within 5 minutes
     const variablesHash = JSON.stringify(sendEmailDto.variables || {})
       .split('')
-      .reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 0)
+      .reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)
       .toString(36);
 
     const dedupeKey = `email:dedup:${sendEmailDto.to}:${sendEmailDto.template}:${variablesHash}`;
@@ -125,10 +120,7 @@ export class NotificationService {
    *        4. Store audit log in Prisma
    *        5. Return messageId
    */
-  async sendSms(
-    sendSmsDto: SendSmsDto,
-    userId: string,
-  ): Promise<{ messageId: string }> {
+  async sendSms(sendSmsDto: SendSmsDto, userId: string): Promise<{ messageId: string }> {
     // [11] RATE LIMITING VIA REDIS
     //      Key: sms:user:{userId}:sent_count
     //      TTL: 60 seconds
@@ -142,9 +134,7 @@ export class NotificationService {
     }
 
     if (smsCount > 5) {
-      throw new BadRequestException(
-        'Rate limit exceeded: maximum 5 SMS per minute',
-      );
+      throw new BadRequestException('Rate limit exceeded: maximum 5 SMS per minute');
     }
 
     // [12] DEDUPLICATE VIA REDIS
@@ -153,7 +143,7 @@ export class NotificationService {
     //      Prevents sending same SMS twice within 5 minutes
     const variablesHash = JSON.stringify(sendSmsDto.variables || {})
       .split('')
-      .reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 0)
+      .reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)
       .toString(36);
 
     const dedupeKey = `sms:dedup:${sendSmsDto.phoneNumber}:${sendSmsDto.template}:${variablesHash}`;
@@ -249,9 +239,7 @@ export class NotificationService {
         //   data: { status: 'SENT' },
         // });
       } catch (error) {
-        this.logger.error(
-          `Failed to send message ${messageId}: ${error.message}`,
-        );
+        this.logger.error(`Failed to send message ${messageId}: ${error.message}`);
 
         // [22] UPDATE AUDIT LOG STATUS TO FAILED
         //      Uncomment when NotificationLog model exists

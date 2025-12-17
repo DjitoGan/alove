@@ -24,14 +24,10 @@
  *     [3e] Audit trail (log all payment events)
  */
 
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { NotificationService } from '../notifications/notification.service';
 import { CreatePaymentDto, PaymentStatus } from './dto/create-payment.dto';
 import { VerifyPaymentDto } from './dto/verify-payment.dto';
 
@@ -42,6 +38,7 @@ export class PaymentService {
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
+    private notificationService: NotificationService,
   ) {}
 
   /**
@@ -57,10 +54,7 @@ export class PaymentService {
    *         6. Return payment details
    *     [4d] Idempotency: Store request hash in Redis, return cached result if duplicate
    */
-  async createPayment(
-    createPaymentDto: CreatePaymentDto,
-    userId: string,
-  ) {
+  async createPayment(createPaymentDto: CreatePaymentDto, userId: string) {
     // [4.1] VALIDATE ORDER EXISTS AND STATUS
     const order = await this.prisma.order.findUnique({
       where: { id: createPaymentDto.orderId },
@@ -78,9 +72,7 @@ export class PaymentService {
 
     // [4.3] Check order status is 'pending_payment'
     if (order.status !== 'pending_payment') {
-      throw new BadRequestException(
-        `Cannot pay for order in status: ${order.status}`,
-      );
+      throw new BadRequestException(`Cannot pay for order in status: ${order.status}`);
     }
 
     // [4.4] CREATE PAYMENT RECORD
@@ -114,11 +106,7 @@ export class PaymentService {
 
     // [4.7] CACHE IN REDIS FOR QUICK LOOKUP
     //       Redis key: payment:{paymentId} (TTL: 24 hours)
-    await this.redis.set(
-      `payment:${payment.id}`,
-      JSON.stringify(payment),
-      86400,
-    );
+    await this.redis.set(`payment:${payment.id}`, JSON.stringify(payment), 86400);
 
     return {
       paymentId: payment.id,
@@ -146,10 +134,7 @@ export class PaymentService {
    *         5. Update Redis cache
    *     [5d] Idempotency: If payment already in final state, return current state
    */
-  async updatePaymentStatus(
-    paymentId: string,
-    verifyPaymentDto: VerifyPaymentDto,
-  ) {
+  async updatePaymentStatus(paymentId: string, verifyPaymentDto: VerifyPaymentDto) {
     // [5.1] FIND PAYMENT
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
@@ -162,13 +147,8 @@ export class PaymentService {
 
     // [5.2] CHECK IDEMPOTENCY
     //       If payment already in final state, don't re-process
-    if (
-      payment.status === PaymentStatus.COMPLETED ||
-      payment.status === PaymentStatus.FAILED
-    ) {
-      this.logger.warn(
-        `Payment ${paymentId} already in final state: ${payment.status}`,
-      );
+    if (payment.status === PaymentStatus.COMPLETED || payment.status === PaymentStatus.FAILED) {
+      this.logger.warn(`Payment ${paymentId} already in final state: ${payment.status}`);
       return payment; // Return current state
     }
 
@@ -193,22 +173,52 @@ export class PaymentService {
 
       this.logger.log(`Payment ${paymentId} completed. Order processing started.`);
 
-      // TODO: Send order confirmation email/SMS to user
+      // [5.4a] SEND PAYMENT SUCCESS NOTIFICATION (ASYNC)
+      //        Fire-and-forget: Don't await, send in background
+      //        EmailTemplate: PAYMENT_SUCCESS
+      this.notificationService
+        .sendEmail(
+          {
+            to: 'customer@example.com', // TODO: Get from user object
+            template: 'PAYMENT_SUCCESS',
+            variables: {
+              orderId: payment.orderId,
+              amount: payment.amount.toString(),
+              paymentMethod: payment.paymentMethod,
+              transactionRef: verifyPaymentDto.transactionRef,
+            },
+          },
+          payment.order!.userId,
+        )
+        .catch((error) => {
+          this.logger.error(`Failed to send payment success email: ${error.message}`);
+        });
     } else if (verifyPaymentDto.status === PaymentStatus.FAILED) {
       // Payment failed → order remains pending_payment (user can retry)
-      this.logger.error(
-        `Payment ${paymentId} failed: ${verifyPaymentDto.errorMessage}`,
-      );
+      this.logger.error(`Payment ${paymentId} failed: ${verifyPaymentDto.errorMessage}`);
 
-      // TODO: Send payment failure notification with retry link
+      // [5.4b] SEND PAYMENT FAILURE NOTIFICATION (ASYNC)
+      this.notificationService
+        .sendEmail(
+          {
+            to: 'customer@example.com', // TODO: Get from user object
+            template: 'PAYMENT_FAILED',
+            variables: {
+              orderId: payment.orderId,
+              amount: payment.amount.toString(),
+              errorMessage: verifyPaymentDto.errorMessage,
+              retryLink: `https://alove.app/orders/${payment.orderId}/pay`, // TODO: Use actual domain
+            },
+          },
+          payment.order!.userId,
+        )
+        .catch((error) => {
+          this.logger.error(`Failed to send payment failure email: ${error.message}`);
+        });
     }
 
     // [5.5] UPDATE REDIS CACHE
-    await this.redis.set(
-      `payment:${paymentId}`,
-      JSON.stringify(updatedPayment),
-      86400,
-    );
+    await this.redis.set(`payment:${paymentId}`, JSON.stringify(updatedPayment), 86400);
 
     return updatedPayment;
   }
@@ -235,11 +245,7 @@ export class PaymentService {
 
     // [6.3] CACHE RESULT
     if (payment) {
-      await this.redis.set(
-        `payment:${paymentId}`,
-        JSON.stringify(payment),
-        86400,
-      );
+      await this.redis.set(`payment:${paymentId}`, JSON.stringify(payment), 86400);
     }
 
     return payment;
@@ -272,9 +278,7 @@ export class PaymentService {
 
     // [7.2] CHECK PAYMENT IS COMPLETED
     if (payment.status !== PaymentStatus.COMPLETED) {
-      throw new BadRequestException(
-        `Cannot refund payment in status: ${payment.status}`,
-      );
+      throw new BadRequestException(`Cannot refund payment in status: ${payment.status}`);
     }
 
     // [7.3] CALL PAYMENT PROVIDER REFUND API
@@ -298,14 +302,31 @@ export class PaymentService {
 
     // [7.5] UPDATE ORDER STATUS (if refund succeeds)
     //       Order can be cancelled only if refund completes
-    await this.prisma.order.update({
+    const order = await this.prisma.order.update({
       where: { id: payment.orderId },
       data: { status: 'cancelled' },
     });
 
     this.logger.log(`Payment ${paymentId} refunded successfully`);
 
-    // TODO: Send refund confirmation notification
+    // [7.6] SEND REFUND CONFIRMATION NOTIFICATION (ASYNC)
+    this.notificationService
+      .sendEmail(
+        {
+          to: 'customer@example.com', // TODO: Get from user object
+          template: 'REFUND_PROCESSED',
+          variables: {
+            orderId: payment.orderId,
+            refundAmount: payment.amount.toString(),
+            refundDate: new Date(),
+            estimatedArrival: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // +3 days
+          },
+        },
+        order.userId,
+      )
+      .catch((error) => {
+        this.logger.error(`Failed to send refund email: ${error.message}`);
+      });
 
     return refundedPayment;
   }

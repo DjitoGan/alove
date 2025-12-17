@@ -30,10 +30,7 @@ export class NotificationController {
   @Post('email')
   @UseGuards(JwtAuthGuard)
   @HttpCode(200) // Return 200 (not 201) as notification is async
-  async sendEmail(
-    @Body() sendEmailDto: SendEmailDto,
-    @Request() req: any,
-  ) {
+  async sendEmail(@Body() sendEmailDto: SendEmailDto, @Request() req: any) {
     // [4] CONTEXT: sendEmail should be called from:
     //     - orders.service.ts (after order creation)
     //     - payments.service.ts (after payment success)
@@ -70,10 +67,7 @@ export class NotificationController {
   @Post('sms')
   @UseGuards(JwtAuthGuard)
   @HttpCode(200) // Return 200 (not 201) as notification is async
-  async sendSms(
-    @Body() sendSmsDto: SendSmsDto,
-    @Request() req: any,
-  ) {
+  async sendSms(@Body() sendSmsDto: SendSmsDto, @Request() req: any) {
     // [7] CONTEXT: sendSms should be called from:
     //     - otp.service.ts (after OTP generation)
     //     - orders.service.ts (order notifications)

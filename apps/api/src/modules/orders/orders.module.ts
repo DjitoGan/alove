@@ -22,9 +22,10 @@ import { Module } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { PrismaModule } from '../prisma/prisma.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
-  imports: [PrismaModule], // Database access
+  imports: [PrismaModule, NotificationModule], // Database + Notifications
   controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService], // Available for other modules

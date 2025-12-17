@@ -31,6 +31,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationService } from '../notifications/notification.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Prisma } from '@prisma/client';
 
@@ -38,7 +39,10 @@ import { Prisma } from '@prisma/client';
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   /**
    * [4] CREATE ORDER
@@ -147,6 +151,30 @@ export class OrdersService {
 
     // [4.4] LOG ORDER CREATION
     this.logger.log(`Order ${order!.id} created for user ${userId}. Total: ${total}`);
+
+    // [4.5] SEND ORDER CONFIRMATION EMAIL (ASYNC)
+    //       Fire-and-forget: Don't await, send in background
+    //       EmailTemplate: ORDER_CONFIRMATION
+    //       Variables: { orderId, totalAmount, itemCount, estimatedDelivery }
+    this.notificationService
+      .sendEmail(
+        {
+          to: 'customer@example.com', // TODO: Get from user object
+          template: 'ORDER_CONFIRMATION',
+          variables: {
+            orderId: order!.id,
+            totalAmount: total.toString(),
+            itemCount: items.length,
+            estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // +7 days
+          },
+        },
+        userId,
+      )
+      .catch((error) => {
+        this.logger.error(
+          `Failed to send order confirmation for order ${order!.id}: ${error.message}`,
+        );
+      });
 
     return order;
   }

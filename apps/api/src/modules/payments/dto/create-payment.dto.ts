@@ -6,8 +6,8 @@
 import { IsString, IsNumber, IsEnum, IsOptional, Min, Max } from 'class-validator';
 
 export enum PaymentMethod {
-  MOBILE_MONEY = 'mobile_money',    // MTN, Airtel (West Africa)
-  CARD = 'card',                    // Visa, Mastercard
+  MOBILE_MONEY = 'mobile_money', // MTN, Airtel (West Africa)
+  CARD = 'card', // Visa, Mastercard
   BANK_TRANSFER = 'bank_transfer',
   CASH_ON_PICKUP = 'cash_on_pickup',
 }
