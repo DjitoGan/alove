@@ -16,18 +16,18 @@ export class CreateUserDto {
   // [2] EMAIL
   //     Unique email address for the user
   @IsEmail()
-  email: string;
+  email!: string;
 
   // [3] PASSWORD
   //     Minimum 8 characters
   @IsString()
   @MinLength(8, { message: 'Password must be at least 8 characters' })
-  password: string;
+  password!: string;
 
   // [4] FULL NAME
   @IsString()
   @MinLength(2, { message: 'Name must be at least 2 characters' })
-  name: string;
+  name!: string;
 
   // [5] PHONE NUMBER (OPTIONAL)
   //     West African format: +228XXXXXXXX

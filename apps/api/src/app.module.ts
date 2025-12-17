@@ -13,6 +13,10 @@ import { NotificationModule } from './modules/notifications/notification.module'
 import { AdminModule } from './modules/admin/admin.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { MeilisearchModule } from './modules/meilisearch/meilisearch.module';
+import { ImportModule } from './modules/import/import.module';
+import { CartModule } from './modules/cart/cart.module';
+import { AddressesModule } from './modules/addresses/addresses.module';
 import { HealthController } from './modules/health/health.controller';
 import { GlobalHttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor'; // garde comme tu l’as
@@ -36,6 +40,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor'; 
 
     PrismaModule,
     RedisModule,
+    MeilisearchModule, // Global module - provides MeilisearchService everywhere
     AuthModule,
     OtpModule,
     PartsModule,
@@ -45,6 +50,9 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor'; 
     AdminModule,
     AnalyticsModule,
     CatalogModule,
+    ImportModule,
+    CartModule,
+    AddressesModule,
   ],
   controllers: [HealthController],
   providers: [

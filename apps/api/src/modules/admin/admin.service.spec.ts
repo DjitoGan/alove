@@ -137,7 +137,7 @@ describe('AdminService', () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValueOnce(mockUser);
 
       // [15] MOCK: Cache set
-      (redis.setex as jest.Mock).mockResolvedValueOnce('OK');
+      (redis.set as jest.Mock).mockResolvedValueOnce('OK');
 
       // [16] CALL SERVICE
       const result = await service.getUserById(userId);
@@ -149,7 +149,7 @@ describe('AdminService', () => {
         where: { id: userId },
         select: expect.any(Object),
       });
-      expect(redis.setex).toHaveBeenCalled();
+      expect(redis.set).toHaveBeenCalled();
     });
 
     // [18] TEST: GET USER NOT FOUND
@@ -407,7 +407,7 @@ describe('AdminService', () => {
       ]);
 
       // [71] MOCK: Cache set
-      (redis.setex as jest.Mock).mockResolvedValueOnce('OK');
+      (redis.set as jest.Mock).mockResolvedValueOnce('OK');
 
       // [72] CALL SERVICE
       const result = await service.getAdminStats();
@@ -416,7 +416,7 @@ describe('AdminService', () => {
       expect(result.totalUsers).toBe(100);
       expect(result.activeUsers).toBe(95);
       expect(result.inactiveUsers).toBe(5);
-      expect(redis.setex).toHaveBeenCalled();
+      expect(redis.set).toHaveBeenCalled();
     });
   });
 });

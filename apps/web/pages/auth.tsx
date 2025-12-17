@@ -91,8 +91,8 @@ export default function AuthPage() {
       setTimeout(() => {
         router.push('/catalog');
       }, 1000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {
       setLoading(false);
     }
@@ -268,7 +268,7 @@ export default function AuthPage() {
         {/* [8] Lien de retour à l'accueil */}
         <div style={{ marginTop: '20px', textAlign: 'center' }}>
           <a href="/" style={{ color: '#667eea', textDecoration: 'none', fontSize: '14px' }}>
-            ← Retour à l'accueil
+            ← Retour à l&apos;accueil
           </a>
         </div>
       </div>

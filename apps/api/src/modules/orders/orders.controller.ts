@@ -33,16 +33,20 @@ import {
   Param,
   Query,
   UseGuards,
-  Request,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CheckoutDto } from './dto/checkout.dto';
+import { UpdateShipmentDto } from './dto/update-shipment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard) // All routes require authentication
+@ApiBearerAuth()
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
@@ -61,9 +65,8 @@ export class OrdersController {
    *     [4e] WHY transaction? Ensures atomicity: if stock update fails, order not created
    */
   @Post()
-  async create(@Body() createOrderDto: CreateOrderDto, @Request() req: any) {
-    const userId = req.user.sub; // Extract user ID from JWT token
-    return this.ordersService.create(userId, createOrderDto);
+  async create(@Body() createOrderDto: CreateOrderDto, @CurrentUser() user: any) {
+    return this.ordersService.create(user.sub, createOrderDto);
   }
 
   /**
@@ -76,12 +79,11 @@ export class OrdersController {
    */
   @Get()
   async findAll(
-    @Request() req: any,
+    @CurrentUser() user: any,
     @Query('page') page: number = 1,
     @Query('pageSize') pageSize: number = 20,
   ) {
-    const userId = req.user.sub;
-    return this.ordersService.findAll(userId, +page, +pageSize);
+    return this.ordersService.findAll(user.sub, +page, +pageSize);
   }
 
   /**
@@ -95,9 +97,8 @@ export class OrdersController {
    *         - User not owner → ForbiddenException
    */
   @Get(':id')
-  async findOne(@Param('id') id: string, @Request() req: any) {
-    const userId = req.user.sub;
-    const order = await this.ordersService.findOne(id, userId);
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    const order = await this.ordersService.findOne(id, user.sub);
 
     if (!order) {
       throw new NotFoundException('Order not found');
@@ -122,8 +123,43 @@ export class OrdersController {
    *     [7f] WHY restore stock? User cancelled, items available for others
    */
   @Delete(':id')
-  async cancel(@Param('id') id: string, @Request() req: any) {
-    const userId = req.user.sub;
-    return this.ordersService.cancel(id, userId);
+  async cancel(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.ordersService.cancel(id, user.sub);
+  }
+
+  /**
+   * [8] POST /v1/orders/checkout (CHECKOUT FROM CART - US-ORD-402)
+   *     [8a] Body: { vendorShipping: [{ vendorId, addressId, notes? }] }
+   *     [8b] Returns: Order with shipments created per vendor
+   *     [8c] Process:
+   *         1. Get user's active cart
+   *         2. Validate addresses and stock
+   *         3. Create order from cart items
+   *         4. Create per-vendor shipments
+   *         5. Mark cart as checked out
+   */
+  @Post('checkout')
+  async checkout(@Body() checkoutDto: CheckoutDto, @CurrentUser() user: any) {
+    return this.ordersService.checkoutFromCart(user.sub, checkoutDto);
+  }
+
+  /**
+   * [9] GET /v1/orders/:orderId/shipments/:id (GET SHIPMENT)
+   *     [9a] Returns: Shipment with tracking info and vendor details
+   */
+  @Get(':orderId/shipments/:id')
+  async getShipment(@Param('id') id: string) {
+    return this.ordersService.findShipment(id);
+  }
+
+  /**
+   * [10] PATCH /v1/orders/shipments/:id (UPDATE SHIPMENT - US-ORD-404)
+   *     [10a] Body: { status?, carrier?, trackingNumber?, pickupPin? }
+   *     [10b] Returns: Updated shipment
+   *     [10c] Updates shipment status and tracking information
+   */
+  @Post('shipments/:id')
+  async updateShipment(@Param('id') id: string, @Body() updateShipmentDto: UpdateShipmentDto) {
+    return this.ordersService.updateShipment(id, updateShipmentDto);
   }
 }

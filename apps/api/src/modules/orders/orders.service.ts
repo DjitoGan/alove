@@ -34,6 +34,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { EmailTemplate } from '../notifications/dto/send-email.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CheckoutDto } from './dto/checkout.dto';
+import { UpdateShipmentDto } from './dto/update-shipment.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -316,5 +318,232 @@ export class OrdersService {
       message: 'Order cancelled successfully',
       order: updatedOrder,
     };
+  }
+
+  /**
+   * [8] CHECKOUT FROM CART (US-ORD-402)
+   *     [8a] Input: userId, CheckoutDto { vendorShipping: [{ vendorId, addressId, notes }] }
+   *     [8b] Output: Order { id, status, total, items, shipments }
+   *     [8c] Process:
+   *         1. Get user's active cart
+   *         2. Validate cart has items
+   *         3. Validate addresses exist
+   *         4. Create order from cart items
+   *         5. Create shipment per vendor
+   *         6. Mark cart as checked out
+   *     [8d] Multi-vendor: Each vendor gets a separate shipment
+   */
+  async checkoutFromCart(userId: string, checkoutDto: CheckoutDto) {
+    // [8.1] GET ACTIVE CART
+    const cart = await this.prisma.cart.findFirst({
+      where: { userId, status: 'ACTIVE' },
+      include: {
+        items: {
+          include: {
+            part: {
+              include: { vendor: true },
+            },
+            vendor: true,
+          },
+        },
+      },
+    });
+
+    if (!cart || cart.items.length === 0) {
+      throw new BadRequestException('Cart is empty');
+    }
+
+    // [8.2] VALIDATE ADDRESSES
+    const addressIds = checkoutDto.vendorShipping.map((vs) => vs.addressId);
+    const addresses = await this.prisma.address.findMany({
+      where: { id: { in: addressIds }, userId },
+    });
+
+    if (addresses.length !== new Set(addressIds).size) {
+      throw new BadRequestException('One or more addresses not found');
+    }
+
+    // [8.3] VALIDATE STOCK AVAILABILITY
+    for (const item of cart.items) {
+      if (item.part.status !== 'PUBLISHED') {
+        throw new BadRequestException(`Part "${item.partTitle}" is no longer available`);
+      }
+      if (item.part.stock < item.quantity) {
+        throw new BadRequestException(
+          `Insufficient stock for "${item.partTitle}". Available: ${item.part.stock}, Requested: ${item.quantity}`,
+        );
+      }
+    }
+
+    // [8.4] CREATE ORDER + ITEMS + SHIPMENTS IN TRANSACTION
+    const order = await this.prisma.$transaction(async (tx) => {
+      // [8.4a] Create order
+      const newOrder = await tx.order.create({
+        data: {
+          userId,
+          status: 'PENDING',
+          total: cart.total,
+        },
+      });
+
+      // [8.4b] Create order items from cart
+      const orderItemsData = cart.items.map((item) => ({
+        orderId: newOrder.id,
+        partId: item.partId,
+        vendorId: item.vendorId,
+        quantity: item.quantity,
+        unitPrice: item.part.price, // Use current price
+      }));
+
+      await tx.orderItem.createMany({
+        data: orderItemsData,
+      });
+
+      // [8.4c] Reduce stock levels
+      for (const item of cart.items) {
+        await tx.part.update({
+          where: { id: item.partId },
+          data: { stock: { decrement: item.quantity } },
+        });
+      }
+
+      // [8.4d] Create shipments per vendor
+      const vendorShippingMap = new Map(checkoutDto.vendorShipping.map((vs) => [vs.vendorId, vs]));
+
+      const vendorIds = [...new Set(cart.items.map((item) => item.vendorId))];
+
+      for (const vendorId of vendorIds) {
+        const shipping = vendorShippingMap.get(vendorId);
+        if (!shipping) {
+          throw new BadRequestException(`Missing shipping info for vendor ${vendorId}`);
+        }
+
+        await tx.shipment.create({
+          data: {
+            orderId: newOrder.id,
+            vendorId,
+            status: 'CREATED',
+          },
+        });
+      }
+
+      // [8.4e] Mark cart as checked out
+      await tx.cart.update({
+        where: { id: cart.id },
+        data: { status: 'CHECKED_OUT' },
+      });
+
+      // [8.4f] Return order with full details
+      return tx.order.findUnique({
+        where: { id: newOrder.id },
+        include: {
+          items: {
+            include: {
+              part: true,
+              vendor: true,
+            },
+          },
+          shipments: {
+            include: {
+              vendor: true,
+            },
+          },
+        },
+      });
+    });
+
+    this.logger.log(`Order ${order!.id} created from cart for user ${userId}`);
+
+    // Send confirmation email (async)
+    this.notificationService
+      .sendEmail(
+        {
+          to: 'customer@example.com', // TODO: Get from user
+          template: EmailTemplate.ORDER_CONFIRMATION,
+          variables: {
+            orderId: order!.id,
+            totalAmount: order!.total.toString(),
+            itemCount: order!.items.length,
+            estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        },
+        userId,
+      )
+      .catch((error) => {
+        this.logger.error(`Failed to send order confirmation: ${error.message}`);
+      });
+
+    return order;
+  }
+
+  /**
+   * [9] UPDATE SHIPMENT (US-ORD-404)
+   *     [9a] Input: shipmentId, UpdateShipmentDto { status?, carrier?, trackingNumber?, pickupPin? }
+   *     [9b] Output: Updated shipment
+   *     [9c] Process:
+   *         1. Validate shipment exists
+   *         2. Update fields
+   *         3. Set timestamp for status transitions
+   */
+  async updateShipment(shipmentId: string, dto: UpdateShipmentDto) {
+    const shipment = await this.prisma.shipment.findUnique({
+      where: { id: shipmentId },
+    });
+
+    if (!shipment) {
+      throw new NotFoundException('Shipment not found');
+    }
+
+    const updateData: any = { ...dto };
+
+    // Set timestamps based on status
+    if (dto.status === 'SHIPPED' && !shipment.shippedAt) {
+      updateData.shippedAt = new Date();
+    }
+    if (dto.status === 'DELIVERED' && !shipment.deliveredAt) {
+      updateData.deliveredAt = new Date();
+    }
+
+    const updated = await this.prisma.shipment.update({
+      where: { id: shipmentId },
+      data: updateData,
+      include: {
+        order: true,
+        vendor: true,
+      },
+    });
+
+    this.logger.log(`Shipment ${shipmentId} updated: ${JSON.stringify(dto)}`);
+
+    return updated;
+  }
+
+  /**
+   * [10] GET SHIPMENT
+   *     [10a] Input: shipmentId
+   *     [10b] Output: Shipment with order and vendor details
+   */
+  async findShipment(shipmentId: string) {
+    const shipment = await this.prisma.shipment.findUnique({
+      where: { id: shipmentId },
+      include: {
+        order: {
+          include: {
+            items: {
+              include: {
+                part: true,
+              },
+            },
+          },
+        },
+        vendor: true,
+      },
+    });
+
+    if (!shipment) {
+      throw new NotFoundException('Shipment not found');
+    }
+
+    return shipment;
   }
 }

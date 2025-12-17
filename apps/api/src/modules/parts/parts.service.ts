@@ -145,14 +145,268 @@ export class PartsService {
   /**
    * [5] FETCH SINGLE PART BY ID
    *     [5a] Input: id (UUID)
-   *     [5b] Output: Part { id, title, description, price, stock, vendor, ... }
+   *     [5b] Output: Part { id, title, description, price, stock, vendor, fitments, images, ... }
    *     [5c] Returns null if not found (handled by controller)
-   *     [5d] Always includes vendor info (caller wants full context)
+   *     [5d] Always includes vendor info, images, and YMM fitments
    */
   async byId(id: string) {
     return this.prisma.part.findUnique({
       where: { id },
-      include: { vendor: true }, // Always include vendor for detail page
+      include: {
+        vendor: true,
+        images: { orderBy: { sortOrder: 'asc' } },
+        fitments: {
+          include: {
+            engine: {
+              include: {
+                year: {
+                  include: {
+                    model: {
+                      include: { make: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * [6] CREATE A NEW PART (US-CAT-301)
+   *     [6a] Validates: vendor exists, all engineIds exist
+   *     [6b] Creates part with OEM refs and fitments in single transaction
+   *     [6c] Returns created part with all relations
+   */
+  async create(data: {
+    title: string;
+    description?: string;
+    price: number;
+    currency?: string;
+    stock: number;
+    condition: string;
+    status?: string;
+    oemRefs: string[];
+    engineIds: string[];
+    city?: string;
+    country?: string;
+    vendorId: string;
+  }) {
+    // [6.1] Verify vendor exists
+    const vendor = await this.prisma.vendor.findUnique({
+      where: { id: data.vendorId },
+    });
+    if (!vendor) {
+      throw new Error(`Vendor not found: ${data.vendorId}`);
+    }
+
+    // [6.2] Verify all engineIds exist
+    const engines = await this.prisma.engineSpec.findMany({
+      where: { id: { in: data.engineIds } },
+    });
+    if (engines.length !== data.engineIds.length) {
+      const foundIds = engines.map((e) => e.id);
+      const missingIds = data.engineIds.filter((id) => !foundIds.includes(id));
+      throw new Error(`Engine specs not found: ${missingIds.join(', ')}`);
+    }
+
+    // [6.3] Create part with fitments in transaction
+    const part = await this.prisma.part.create({
+      data: {
+        title: data.title,
+        description: data.description,
+        price: data.price,
+        currency: data.currency || 'XOF',
+        stock: data.stock,
+        condition: data.condition as any, // Cast to enum
+        status: (data.status as any) || 'DRAFT',
+        oemRefs: data.oemRefs,
+        city: data.city,
+        country: data.country || 'TG',
+        vendorId: data.vendorId,
+        // Create fitments for each engine
+        fitments: {
+          create: data.engineIds.map((engineId) => ({
+            engineId,
+          })),
+        },
+      },
+      include: {
+        vendor: true,
+        images: true,
+        fitments: {
+          include: {
+            engine: {
+              include: {
+                year: {
+                  include: {
+                    model: { include: { make: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return part;
+  }
+
+  /**
+   * [7] UPDATE AN EXISTING PART
+   *     [7a] Partial update (only provided fields)
+   *     [7b] If engineIds provided, replaces all fitments
+   *     [7c] Returns updated part with all relations
+   */
+  async update(
+    id: string,
+    data: {
+      title?: string;
+      description?: string;
+      price?: number;
+      currency?: string;
+      stock?: number;
+      condition?: string;
+      status?: string;
+      oemRefs?: string[];
+      engineIds?: string[];
+      city?: string;
+      country?: string;
+    },
+  ) {
+    // [7.1] Verify part exists
+    const existingPart = await this.prisma.part.findUnique({ where: { id } });
+    if (!existingPart) {
+      return null;
+    }
+
+    // [7.2] If engineIds provided, verify they exist
+    if (data.engineIds && data.engineIds.length > 0) {
+      const engines = await this.prisma.engineSpec.findMany({
+        where: { id: { in: data.engineIds } },
+      });
+      if (engines.length !== data.engineIds.length) {
+        const foundIds = engines.map((e) => e.id);
+        const missingIds = data.engineIds.filter((eId) => !foundIds.includes(eId));
+        throw new Error(`Engine specs not found: ${missingIds.join(', ')}`);
+      }
+    }
+
+    // [7.3] Update part (and fitments if engineIds provided)
+    const part = await this.prisma.$transaction(async (tx) => {
+      // Delete existing fitments if replacing
+      if (data.engineIds && data.engineIds.length > 0) {
+        await tx.partFitment.deleteMany({ where: { partId: id } });
+      }
+
+      // Update part
+      return tx.part.update({
+        where: { id },
+        data: {
+          ...(data.title && { title: data.title }),
+          ...(data.description !== undefined && { description: data.description }),
+          ...(data.price !== undefined && { price: data.price }),
+          ...(data.currency && { currency: data.currency }),
+          ...(data.stock !== undefined && { stock: data.stock }),
+          ...(data.condition && { condition: data.condition as any }),
+          ...(data.status && { status: data.status as any }),
+          ...(data.oemRefs && { oemRefs: data.oemRefs }),
+          ...(data.city !== undefined && { city: data.city }),
+          ...(data.country && { country: data.country }),
+          // Create new fitments if engineIds provided
+          ...(data.engineIds &&
+            data.engineIds.length > 0 && {
+              fitments: {
+                create: data.engineIds.map((engineId) => ({ engineId })),
+              },
+            }),
+        },
+        include: {
+          vendor: true,
+          images: true,
+          fitments: {
+            include: {
+              engine: {
+                include: {
+                  year: {
+                    include: {
+                      model: { include: { make: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    return part;
+  }
+
+  /**
+   * [8] DELETE A PART
+   *     [8a] Soft delete would be better for production (set status=ARCHIVED)
+   *     [8b] Currently hard deletes (cascade deletes fitments, images)
+   *     [8c] Returns deleted part or null if not found
+   */
+  async delete(id: string) {
+    const existingPart = await this.prisma.part.findUnique({ where: { id } });
+    if (!existingPart) {
+      return null;
+    }
+
+    return this.prisma.part.delete({
+      where: { id },
+      include: { vendor: true },
+    });
+  }
+
+  /**
+   * [9] PUBLISH A PART (shortcut to set status=PUBLISHED)
+   *     [9a] Validates part has required data before publishing
+   *     [9b] Returns updated part or null if not found
+   */
+  async publish(id: string) {
+    const part = await this.prisma.part.findUnique({
+      where: { id },
+      include: { fitments: true },
+    });
+
+    if (!part) {
+      return null;
+    }
+
+    // Validate: must have OEM refs and fitments to publish
+    if (part.oemRefs.length === 0) {
+      throw new Error('Cannot publish: at least 1 OEM reference is required');
+    }
+    if (part.fitments.length === 0) {
+      throw new Error('Cannot publish: at least 1 compatible engine is required');
+    }
+
+    return this.prisma.part.update({
+      where: { id },
+      data: { status: 'PUBLISHED' },
+      include: {
+        vendor: true,
+        fitments: {
+          include: {
+            engine: {
+              include: {
+                year: {
+                  include: {
+                    model: { include: { make: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
   }
 }

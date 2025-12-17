@@ -170,16 +170,7 @@ export class AuthService {
    *     [8c] Process: Fetch user from database
    *     [8d] Used by GET /auth/me endpoint to restore user session on page reload
    */
-  async validateUser(userId: string) {
-    return this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        createdAt: true,
-      },
-    });
-  }
+  // merged into single implementation below
 
   /**
    * [9] GENERATE JWT TOKENS (Private Helper)
@@ -242,5 +233,56 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  /**
+   * [11] FIND USER BY EMAIL
+   *      Used internally for password reset flow
+   */
+  async findByEmail(email: string) {
+    return this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        password: false,
+      },
+    });
+  }
+
+  /**
+   * [12] CHANGE PASSWORD
+   *      [12a] Input: userId, currentPassword, newPassword
+   *      [12b] Process: Verify current password, hash new one, update database
+   *      [12c] Security: Revokes all sessions after password change (done by controller)
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        password: hashedPassword,
+      },
+    });
+
+    this.logger.log(`Password changed for user ${userId}`);
   }
 }

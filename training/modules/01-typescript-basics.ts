@@ -16,8 +16,8 @@ type Email = string;
 type PhoneNumber = string;
 type Decimal = number;
 
-const userEmail: Email = 'user@alove.com';
-const userPhone: PhoneNumber = '+212612345678';
+const userEmail: Email = "user@alove.com";
+const userPhone: PhoneNumber = "+212612345678";
 const price: Decimal = 99.99;
 
 // [1.2] TYPE ALIASES VS INTERFACES
@@ -37,15 +37,20 @@ interface Customer extends User {
 }
 
 // [1.3] UNION TYPES
-type PaymentMethod = 'CARD' | 'MOBILE_MONEY' | 'BANK_TRANSFER';
-type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+type PaymentMethod = "CARD" | "MOBILE_MONEY" | "BANK_TRANSFER";
+type OrderStatus =
+  | "PENDING"
+  | "PROCESSING"
+  | "SHIPPED"
+  | "DELIVERED"
+  | "CANCELLED";
 
-const paymentMethod: PaymentMethod = 'MOBILE_MONEY'; // ✅ Valid
+const paymentMethod: PaymentMethod = "MOBILE_MONEY"; // ✅ Valid
 // const invalidPayment: PaymentMethod = 'CRYPTO'; // ❌ Error!
 
 // [1.4] LITERAL TYPES
-type HTTPMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-type Role = 'ADMIN' | 'VENDOR' | 'CUSTOMER' | 'SUPPORT';
+type HTTPMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+type Role = "ADMIN" | "VENDOR" | "CUSTOMER" | "SUPPORT";
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 // SECTION 2: FUNCTIONS & GENERICS
@@ -54,7 +59,7 @@ type Role = 'ADMIN' | 'VENDOR' | 'CUSTOMER' | 'SUPPORT';
 // [2.1] FUNCTION TYPES
 function createUser(email: string, password: string): User {
   return {
-    id: 'user-1',
+    id: "user-1",
     email,
     password,
     createdAt: new Date(),
@@ -63,8 +68,13 @@ function createUser(email: string, password: string): User {
 
 // Arrow function with explicit return type
 const getUser = (id: string): User | null => {
-  if (id === 'user-1') {
-    return { id, email: 'user@alove.com', password: 'hash', createdAt: new Date() };
+  if (id === "user-1") {
+    return {
+      id,
+      email: "user@alove.com",
+      password: "hash",
+      createdAt: new Date(),
+    };
   }
   return null;
 };
@@ -75,8 +85,8 @@ function sendEmail(to: string, subject: string, body?: string): void {
   if (body) console.log(`Body: ${body}`);
 }
 
-sendEmail('user@alove.com', 'Welcome'); // ✅ body is optional
-sendEmail('user@alove.com', 'Welcome', 'Welcome to ALOVE!'); // ✅ body provided
+sendEmail("user@alove.com", "Welcome"); // ✅ body is optional
+sendEmail("user@alove.com", "Welcome", "Welcome to ALOVE!"); // ✅ body provided
 
 // [2.3] GENERICS (REUSABLE LOGIC)
 interface Response<T> {
@@ -90,10 +100,12 @@ function apiResponse<T>(data: T): Response<T> {
 }
 
 // Usage
-const userResponse: Response<User> = apiResponse(createUser('test@alove.com', 'pass'));
+const userResponse: Response<User> = apiResponse(
+  createUser("test@alove.com", "pass")
+);
 const usersResponse: Response<User[]> = apiResponse([
-  createUser('user1@alove.com', 'pass1'),
-  createUser('user2@alove.com', 'pass2'),
+  createUser("user1@alove.com", "pass1"),
+  createUser("user2@alove.com", "pass2"),
 ]);
 
 // [2.4] GENERIC CONSTRAINTS
@@ -101,8 +113,8 @@ function getProperty<T, K extends keyof T>(obj: T, key: K): T[K] {
   return obj[key];
 }
 
-const user = createUser('user@alove.com', 'password');
-const email = getProperty(user, 'email'); // ✅ 'email' is a valid key
+const user = createUser("user@alove.com", "password");
+const email = getProperty(user, "email"); // ✅ 'email' is a valid key
 // const invalid = getProperty(user, 'invalidKey'); // ❌ Error!
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
@@ -187,11 +199,11 @@ class StripePayment extends PaymentProcessor {
 
 // [4.1] STRING ENUM
 enum OrderStatusEnum {
-  PENDING = 'PENDING',
-  PROCESSING = 'PROCESSING',
-  SHIPPED = 'SHIPPED',
-  DELIVERED = 'DELIVERED',
-  CANCELLED = 'CANCELLED',
+  PENDING = "PENDING",
+  PROCESSING = "PROCESSING",
+  SHIPPED = "SHIPPED",
+  DELIVERED = "DELIVERED",
+  CANCELLED = "CANCELLED",
 }
 
 // [4.2] NUMERIC ENUM
@@ -207,9 +219,9 @@ const taskPriority: Priority = Priority.HIGH;
 
 // [4.3] HETEROGENEOUS ENUM (MIX OF TYPES)
 enum Status {
-  SUCCESS = 'SUCCESS',
+  SUCCESS = "SUCCESS",
   FAILURE = 0,
-  PENDING = 'PENDING',
+  PENDING = "PENDING",
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
@@ -228,7 +240,7 @@ interface OrderDto {
 interface PaymentDto {
   orderId: string;
   amount: number;
-  currency: 'XOF' | 'USD' | 'EUR';
+  currency: "XOF" | "USD" | "EUR";
   method: PaymentMethod;
   mobileMoneyPhone?: string;
 }

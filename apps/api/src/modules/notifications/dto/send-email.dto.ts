@@ -14,6 +14,7 @@ export enum EmailTemplate {
   REFUND_PROCESSED = 'refund_processed',
   WELCOME = 'welcome',
   PASSWORD_RESET = 'password_reset',
+  EMAIL_VERIFICATION = 'email_verification',
 }
 
 export class SendEmailDto {

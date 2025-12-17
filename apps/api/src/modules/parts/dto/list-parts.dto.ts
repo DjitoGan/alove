@@ -8,14 +8,14 @@ import {
   IsString,
   IsUUID,
   Min,
-} from "class-validator";
-import { Transform, Type } from "class-transformer";
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 export enum SortOption {
-  NEW = "new",
-  PRICE_ASC = "price_asc",
-  PRICE_DESC = "price_desc",
-  STOCK_DESC = "stock_desc",
+  NEW = 'new',
+  PRICE_ASC = 'price_asc',
+  PRICE_DESC = 'price_desc',
+  STOCK_DESC = 'stock_desc',
 }
 
 export class ListPartsDto {
@@ -54,6 +54,6 @@ export class ListPartsDto {
   sort: SortOption = SortOption.NEW;
 
   @IsOptional()
-  @Transform(({ value }) => value === "true" || value === true)
+  @Transform(({ value }) => value === 'true' || value === true)
   includeVendor = false;
 }

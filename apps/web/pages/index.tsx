@@ -202,6 +202,90 @@ export default function Home({ t }: HomeProps) {
         </a>
 
         <a
+          href="/cart"
+          style={{
+            display: 'block',
+            padding: '30px 20px',
+            background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+            color: '#fff',
+            textDecoration: 'none',
+            borderRadius: '12px',
+            fontWeight: '500',
+            textAlign: 'center',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.25)';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+          }}
+        >
+          <div style={{ fontSize: '40px', marginBottom: '10px' }}>🛒</div>
+          <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '5px' }}>Panier</div>
+          <div style={{ fontSize: '14px', opacity: 0.9 }}>Mon panier d&apos;achat</div>
+        </a>
+
+        <a
+          href="/addresses"
+          style={{
+            display: 'block',
+            padding: '30px 20px',
+            background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+            color: '#333',
+            textDecoration: 'none',
+            borderRadius: '12px',
+            fontWeight: '500',
+            textAlign: 'center',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.25)';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+          }}
+        >
+          <div style={{ fontSize: '40px', marginBottom: '10px' }}>📍</div>
+          <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '5px' }}>Adresses</div>
+          <div style={{ fontSize: '14px', opacity: 0.9 }}>Mes adresses de livraison</div>
+        </a>
+
+        <a
+          href="/admin"
+          style={{
+            display: 'block',
+            padding: '30px 20px',
+            background: 'linear-gradient(135deg, #ffaf7b 0%, #d76d77 100%)',
+            color: '#fff',
+            textDecoration: 'none',
+            borderRadius: '12px',
+            fontWeight: '500',
+            textAlign: 'center',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.25)';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+          }}
+        >
+          <div style={{ fontSize: '40px', marginBottom: '10px' }}>🛠️</div>
+          <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '5px' }}>Admin</div>
+          <div style={{ fontSize: '14px', opacity: 0.9 }}>Monitoring & sync</div>
+        </a>
+
+        <a
           href="/otp-test"
           style={{
             display: 'block',
@@ -256,7 +340,7 @@ export default function Home({ t }: HomeProps) {
         >
           <div style={{ fontSize: '40px', marginBottom: '10px' }}>❤️</div>
           <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '5px' }}>API Health</div>
-          <div style={{ fontSize: '14px', opacity: 0.9 }}>Vérifier l'API</div>
+          <div style={{ fontSize: '14px', opacity: 0.9 }}>Vérifier l&apos;API</div>
         </a>
       </section>
 

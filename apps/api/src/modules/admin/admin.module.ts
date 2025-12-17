@@ -1,28 +1,22 @@
-/**
- * [1] ADMIN MODULE
- *     User management module
- *     Features:
- *       - CRUD operations on users
- *       - Role assignment and management
- *       - User activation/deactivation
- *       - Statistics and dashboard data
- */
-
 import { Module } from '@nestjs/common';
 import { AdminController } from './admin.controller';
+import { AdminAuditController } from './audit.controller';
 import { AdminService } from './admin.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../redis/redis.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   // [2] IMPORTS
   //     - PrismaModule: Database access via ORM
   //     - RedisModule: Caching for user data and stats
-  imports: [PrismaModule, RedisModule],
+  //     - AuthModule: For AuditLoggingService
+  imports: [PrismaModule, RedisModule, AuthModule],
 
   // [3] CONTROLLERS
-  //     - AdminController: HTTP endpoints at /v1/admin
-  controllers: [AdminController],
+  //     - AdminController: User management at /v1/admin
+  //     - AdminAuditController: Audit logs at /v1/admin/audit-logs
+  controllers: [AdminController, AdminAuditController],
 
   // [4] PROVIDERS
   //     - AdminService: Business logic for user management

@@ -84,9 +84,6 @@ export class PaymentService {
         currency: createPaymentDto.currency || 'XOF',
         method: createPaymentDto.method,
         status: PaymentStatus.PENDING,
-        metadata: {
-          mobileMoneyPhone: createPaymentDto.mobileMoneyPhone,
-        },
       },
     });
 
@@ -99,10 +96,14 @@ export class PaymentService {
       this.logger.log(
         `Payment created: ${payment.id} for order ${order.id} (${createPaymentDto.amount} ${createPaymentDto.currency})`,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       // [4.6] If provider API fails, still keep Payment record (status: pending)
       // User can retry via GET /payments/:id
-      this.logger.error(`Payment provider error: ${error.message}`);
+      if (error instanceof Error) {
+        this.logger.error(`Payment provider error: ${error.message}`);
+      } else {
+        this.logger.error('Payment provider error');
+      }
     }
 
     // [4.7] CACHE IN REDIS FOR QUICK LOOKUP
@@ -185,14 +186,18 @@ export class PaymentService {
             variables: {
               orderId: payment.orderId,
               amount: payment.amount.toString(),
-              paymentMethod: payment.paymentMethod,
+              paymentMethod: payment.method,
               transactionRef: verifyPaymentDto.transactionRef,
             },
           },
           payment.order!.userId,
         )
-        .catch((error) => {
-          this.logger.error(`Failed to send payment success email: ${error.message}`);
+        .catch((error: unknown) => {
+          if (error instanceof Error) {
+            this.logger.error(`Failed to send payment success email: ${error.message}`);
+          } else {
+            this.logger.error('Failed to send payment success email');
+          }
         });
     } else if (verifyPaymentDto.status === PaymentStatus.FAILED) {
       // Payment failed → order remains pending_payment (user can retry)
@@ -213,8 +218,12 @@ export class PaymentService {
           },
           payment.order!.userId,
         )
-        .catch((error) => {
-          this.logger.error(`Failed to send payment failure email: ${error.message}`);
+        .catch((error: unknown) => {
+          if (error instanceof Error) {
+            this.logger.error(`Failed to send payment failure email: ${error.message}`);
+          } else {
+            this.logger.error('Failed to send payment failure email');
+          }
         });
     }
 
@@ -287,8 +296,12 @@ export class PaymentService {
     try {
       // In production: const refundResponse = await this.callProviderRefund(payment);
       this.logger.log(`Refund initiated for payment ${paymentId}`);
-    } catch (error) {
-      this.logger.error(`Refund failed: ${error.message}`);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        this.logger.error(`Refund failed: ${error.message}`);
+      } else {
+        this.logger.error('Refund failed');
+      }
       throw new BadRequestException('Refund failed. Please try again.');
     }
 
@@ -325,8 +338,12 @@ export class PaymentService {
         },
         order.userId,
       )
-      .catch((error) => {
-        this.logger.error(`Failed to send refund email: ${error.message}`);
+      .catch((error: unknown) => {
+        if (error instanceof Error) {
+          this.logger.error(`Failed to send refund email: ${error.message}`);
+        } else {
+          this.logger.error('Failed to send refund email');
+        }
       });
 
     return refundedPayment;

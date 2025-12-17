@@ -22,19 +22,24 @@ import {
   Param,
   Query,
   UseGuards,
-  Request,
   HttpCode,
   BadRequestException,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { AdminOnlyGuard } from './guards/admin-only.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ListUsersQueryDto } from './dto/list-users.dto';
 
 @Controller('admin')
-@UseGuards(JwtAuthGuard, AdminOnlyGuard) // All endpoints require authentication + ADMIN role
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN')
+@ApiBearerAuth()
+@ApiTags('admin')
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
@@ -47,8 +52,8 @@ export class AdminController {
    */
   @Post('users')
   @HttpCode(201)
-  async createUser(@Body() createUserDto: CreateUserDto, @Request() req: any) {
-    // [3] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+  async createUser(@Body() createUserDto: CreateUserDto) {
+    // [3] ADMIN ROLE VERIFIED BY RolesGuard
     const user = await this.adminService.createUser(createUserDto);
     return {
       success: true,
@@ -65,8 +70,8 @@ export class AdminController {
    *     Use case: Admin views list of all users with filtering, sorting, pagination
    */
   @Get('users')
-  async listUsers(@Query() query: ListUsersQueryDto, @Request() req: any) {
-    // [5] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+  async listUsers(@Query() query: ListUsersQueryDto) {
+    // [5] ADMIN ROLE VERIFIED BY RolesGuard
     const result = await this.adminService.listUsers(query);
     return {
       success: true,
@@ -83,8 +88,8 @@ export class AdminController {
    *     Use case: Admin views single user's full details
    */
   @Get('users/:id')
-  async getUser(@Param('id') userId: string, @Request() req: any) {
-    // [7] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+  async getUser(@Param('id') userId: string) {
+    // [7] ADMIN ROLE VERIFIED BY RolesGuard
     const user = await this.adminService.getUserById(userId);
     return {
       success: true,
@@ -104,13 +109,13 @@ export class AdminController {
   async updateUser(
     @Param('id') userId: string,
     @Body() updateUserDto: UpdateUserDto,
-    @Request() req: any,
+    @CurrentUser() currentUser: any,
   ) {
-    // [9] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+    // [9] ADMIN ROLE VERIFIED BY RolesGuard
 
     // [10] PREVENT SELF-DEMOTION
     //      If updating the current user, don't allow downgrading own role
-    if (userId === req.user.id && updateUserDto.role) {
+    if (userId === currentUser.sub && updateUserDto.role) {
       throw new BadRequestException('Cannot change your own role');
     }
 
@@ -137,12 +142,12 @@ export class AdminController {
   async deleteUser(
     @Param('id') userId: string,
     @Query('forceDelete') forceDelete: string,
-    @Request() req: any,
+    @CurrentUser() currentUser: any,
   ) {
-    // [12] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+    // [12] ADMIN ROLE VERIFIED BY RolesGuard
 
     // [13] PREVENT SELF-DELETION
-    if (userId === req.user.id) {
+    if (userId === currentUser.sub) {
       throw new BadRequestException('Cannot delete your own account');
     }
 
@@ -165,11 +170,15 @@ export class AdminController {
    *      Use case: Admin quickly changes user's role (convenience endpoint)
    */
   @Post('users/:id/role')
-  async assignRole(@Param('id') userId: string, @Body('role') role: string, @Request() req: any) {
-    // [16] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+  async assignRole(
+    @Param('id') userId: string,
+    @Body('role') role: string,
+    @CurrentUser() currentUser: any,
+  ) {
+    // [16] ADMIN ROLE VERIFIED BY RolesGuard
 
     // [17] PREVENT SELF-DEMOTION
-    if (userId === req.user.id) {
+    if (userId === currentUser.sub) {
       throw new BadRequestException('Cannot change your own role');
     }
 
@@ -193,8 +202,8 @@ export class AdminController {
    *      Use case: Admin dashboard displays user statistics
    */
   @Get('stats')
-  async getAdminStats(@Request() req: any) {
-    // [19] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+  async getAdminStats() {
+    // [19] ADMIN ROLE VERIFIED BY RolesGuard
     const stats = await this.adminService.getAdminStats();
     return {
       success: true,

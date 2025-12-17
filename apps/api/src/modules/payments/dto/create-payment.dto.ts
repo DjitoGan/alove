@@ -24,18 +24,18 @@ export class CreatePaymentDto {
   // [2] ORDER ID
   //     Which order is this payment for?
   @IsString()
-  orderId: string;
+  orderId!: string;
 
   // [3] AMOUNT
   //     Payment amount in currency (XOF for West Africa)
   @IsNumber()
   @Min(0.01)
-  amount: number;
+  amount!: number;
 
   // [4] PAYMENT METHOD
   //     How is the user paying? (mobile money, card, etc.)
   @IsEnum(PaymentMethod)
-  method: PaymentMethod;
+  method!: PaymentMethod;
 
   // [5] MOBILE MONEY PHONE (OPTIONAL)
   //     Phone number for mobile money (required if method = mobile_money)

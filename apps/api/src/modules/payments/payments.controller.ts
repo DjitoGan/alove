@@ -34,18 +34,20 @@ import {
   Param,
   Body,
   UseGuards,
-  Request,
   HttpCode,
   HttpStatus,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PaymentService } from './payments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { VerifyPaymentDto } from './dto/verify-payment.dto';
 
 @Controller('payments')
+@ApiTags('payments')
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
@@ -67,22 +69,23 @@ export class PaymentController {
    */
   @Post()
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.CREATED)
-  async createPayment(@Body() createPaymentDto: CreatePaymentDto, @Request() req: any) {
+  async createPayment(@Body() createPaymentDto: CreatePaymentDto, @CurrentUser() user: any) {
     // [4.1] Validate order exists and user owns it
-    const order = await this.paymentService.validateOrder(createPaymentDto.orderId, req.user.sub);
+    const order = await this.paymentService.validateOrder(createPaymentDto.orderId, user.sub);
 
     if (!order) {
       throw new NotFoundException('Order not found');
     }
 
     // [4.2] Validate amount matches order total
-    if (createPaymentDto.amount !== order.totalPrice) {
+    if (createPaymentDto.amount !== Number(order.total)) {
       throw new BadRequestException('Payment amount does not match order total');
     }
 
     // [4.3] Create payment record
-    const payment = await this.paymentService.createPayment(createPaymentDto, req.user.sub);
+    const payment = await this.paymentService.createPayment(createPaymentDto, user.sub);
 
     return payment;
   }
@@ -129,7 +132,8 @@ export class PaymentController {
    */
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  async getPayment(@Param('id') paymentId: string, @Request() req: any) {
+  @ApiBearerAuth()
+  async getPayment(@Param('id') paymentId: string, @CurrentUser() user: any) {
     const payment = await this.paymentService.getPaymentById(paymentId);
 
     if (!payment) {
@@ -137,7 +141,7 @@ export class PaymentController {
     }
 
     // [6.1] Verify user owns this payment (via order)
-    const order = await this.paymentService.validateOrder(payment.orderId, req.user.sub);
+    const order = await this.paymentService.validateOrder(payment.orderId, user.sub);
 
     if (!order) {
       throw new NotFoundException('Unauthorized');
@@ -160,8 +164,9 @@ export class PaymentController {
    */
   @Post(':id/refund')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  async refundPayment(@Param('id') paymentId: string, @Request() req: any) {
+  async refundPayment(@Param('id') paymentId: string, @CurrentUser() user: any) {
     // [7.1] Find payment
     const payment = await this.paymentService.getPaymentById(paymentId);
 
@@ -170,7 +175,7 @@ export class PaymentController {
     }
 
     // [7.2] Verify user owns this payment
-    const order = await this.paymentService.validateOrder(payment.orderId, req.user.sub);
+    const order = await this.paymentService.validateOrder(payment.orderId, user.sub);
 
     if (!order) {
       throw new NotFoundException('Unauthorized');

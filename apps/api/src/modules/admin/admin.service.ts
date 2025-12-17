@@ -117,7 +117,7 @@ export class AdminService {
     }
 
     // [10] CACHE FOR 5 MINUTES
-    await this.redis.setex(cacheKey, 300, JSON.stringify(user));
+    await this.redis.set(cacheKey, JSON.stringify(user), 300);
 
     return user;
   }
@@ -350,7 +350,7 @@ export class AdminService {
     };
 
     // [35] CACHE STATS FOR 10 MINUTES
-    await this.redis.setex(cacheKey, 600, JSON.stringify(stats));
+    await this.redis.set(cacheKey, JSON.stringify(stats), 600);
 
     return stats;
   }

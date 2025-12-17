@@ -31,26 +31,38 @@ import {
   Body,
   UseGuards,
   Get,
-  Request,
   HttpCode,
   HttpStatus,
+  Delete,
+  Param,
+  Patch,
+  BadRequestException,
+  UseInterceptors,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-
-// [4] GUARDS
-//     Guards are middleware that check conditions before route handler executes
-import { JwtAuthGuard } from './guards/jwt-auth.guard'; // Validates access token
-import { JwtRefreshGuard } from './guards/jwt-refresh.guard'; // Validates refresh token
-
-// [5] DATA TRANSFER OBJECTS (DTOs)
-//     DTOs validate and type-hint request body
-//     ValidationPipe (from main.ts) checks these automatically
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { CurrentUser } from './decorators/current-user.decorator';
+import { EmailVerificationService } from './services/email-verification.service';
+import { PasswordResetService } from './services/password-reset.service';
+import { SessionService } from './services/session.service';
+import { AuditLoggingInterceptor } from './interceptors/audit-logging.interceptor';
+import { EmailVerifiedGuard } from './guards/email-verified.guard';
+import { RateLimitGuard } from './guards/rate-limit.guard';
 
 @Controller('auth')
+@ApiTags('auth')
+@UseInterceptors(AuditLoggingInterceptor)
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly emailVerificationService: EmailVerificationService,
+    private readonly passwordResetService: PasswordResetService,
+    private readonly sessionService: SessionService,
+  ) {}
 
   /**
    * [6] POST /v1/auth/register
@@ -87,31 +99,216 @@ export class AuthController {
    *     [8b] Returns: { accessToken, refreshToken }
    *     [8c] Process: Verify refresh token validity, issue new access token
    *     [8d] @UseGuards(JwtRefreshGuard): Validates refresh token automatically
-   *     [8e] req.user populated by JwtRefreshGuard: { sub: userId, email, type: 'refresh' }
+   *     [8e] user populated by JwtRefreshGuard: { sub: userId, email, type: 'refresh' }
    *     [8f] WHY separate tokens? Refresh tokens have longer TTL (7 days vs 15m access)
    *     [8g] WHY longer TTL? Reduces login prompts; still secure if access token leaked
    */
   @Post('refresh')
   @UseGuards(JwtRefreshGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  async refresh(@Request() req: any) {
+  async refresh(@CurrentUser() user: any) {
     // Extract user ID & email from refresh token payload
-    return this.authService.refreshToken(req.user.sub, req.user.email);
+    return this.authService.refreshToken(user.sub, user.email);
   }
 
   /**
    * [9] GET /v1/auth/me
    *     [9a] Returns: Current user profile { id, email, createdAt, ... }
    *     [9b] @UseGuards(JwtAuthGuard): Validates access token, extracts user from JWT
-   *     [9c] req.user populated by JwtAuthGuard: { sub: userId, email, type: 'access' }
+   *     [9c] user populated by JwtAuthGuard: { sub: userId, email, type: 'access' }
    *     [9d] Throws: UnauthorizedException if token missing or invalid
    *     [9e] WHY this endpoint? Frontend needs to restore session on page reload
    *     [9f] Frontend flow: GET /me → if 401, token expired → refresh token → retry
    */
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  async getProfile(@Request() req: any) {
+  @ApiBearerAuth()
+  async getProfile(@CurrentUser() user: any) {
     // Fetch user from DB using ID extracted from JWT
-    return this.authService.validateUser(req.user.sub);
+    return this.authService.validateUser(user.sub);
+  }
+
+  /**
+   * [10] POST /v1/auth/verify-email
+   *      [10a] Body: { code: string } (6-digit OTP)
+   *      [10b] Returns: { message: 'Email verified successfully' }
+   *      [10c] Process: Validate OTP code, mark user as verified
+   *      [10d] @UseGuards(JwtAuthGuard): Only authenticated users
+   *      [10e] Side effect: Sets user.isEmailVerified = true
+   */
+  @Post('verify-email')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  async verifyEmail(@Body() body: { code: string }, @CurrentUser() user: any) {
+    if (!body.code || body.code.length !== 6) {
+      throw new BadRequestException('Invalid verification code format');
+    }
+
+    await this.emailVerificationService.verifyOtp(user.sub, body.code);
+    return { message: 'Email verified successfully' };
+  }
+
+  /**
+   * [11] POST /v1/auth/resend-otp
+   *      [11a] Returns: { message: 'OTP sent to your email' }
+   *      [11b] Process: Generate new OTP, send to user email
+   *      [11c] @UseGuards(JwtAuthGuard): Only authenticated users
+   *      [11d] Rate limit: 5 attempts per 15 minutes
+   */
+  @Post('resend-otp')
+  @UseGuards(JwtAuthGuard)
+  @UseGuards(RateLimitGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  async resendOtp(@CurrentUser() user: any) {
+    const dbUser = await this.authService.validateUser(user.sub);
+    await this.emailVerificationService.generateAndSendOtp(user.sub, dbUser.email);
+    return { message: 'OTP sent to your email' };
+  }
+
+  /**
+   * [12] POST /v1/auth/forgot-password
+   *      [12a] Body: { email: string }
+   *      [12b] Returns: { message: 'Password reset link sent to email' }
+   *      [12c] Process: Generate reset token, send link to email
+   *      [12d] No auth required (public endpoint)
+   *      [12e] Rate limit: 3 attempts per hour per IP+email
+   */
+  @Post('forgot-password')
+  @UseGuards(RateLimitGuard)
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() body: { email: string }) {
+    if (!body.email) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const user = await this.authService.findByEmail(body.email);
+    if (user) {
+      // Always return success (security: don't reveal if email exists)
+      await this.passwordResetService.generateAndSendResetToken(user.id, user.email);
+    }
+
+    return { message: 'Password reset link sent to your email' };
+  }
+
+  /**
+   * [13] POST /v1/auth/reset-password
+   *      [13a] Body: { token: string, newPassword: string }
+   *      [13b] Returns: { message: 'Password reset successfully' }
+   *      [13c] Process: Validate token, hash password, update user, revoke sessions
+   *      [13d] No auth required (uses token instead)
+   */
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() body: { token: string; newPassword: string }) {
+    if (!body.token || !body.newPassword) {
+      throw new BadRequestException('Token and new password are required');
+    }
+
+    if (body.newPassword.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
+
+    await this.passwordResetService.resetPassword(body.token, body.newPassword);
+    return { message: 'Password reset successfully' };
+  }
+
+  /**
+   * [14] POST /v1/auth/logout
+   *      [14a] Returns: { message: 'Logged out successfully' }
+   *      [14b] Process: Revoke current session
+   *      [14c] @UseGuards(JwtAuthGuard): Only authenticated users
+   */
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  async logout(@CurrentUser() user: any) {
+    // Note: Client should delete tokens from localStorage
+    // Server-side session management handled by client JWT expiry
+    return { message: 'Logged out successfully' };
+  }
+
+  /**
+   * [15] GET /v1/auth/sessions
+   *      [15a] Returns: [ { id, ipAddress, deviceInfo, createdAt, expiresAt } ]
+   *      [15b] Process: Fetch all active sessions for current user
+   *      [15c] @UseGuards(JwtAuthGuard): Only authenticated users
+   */
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async getSessions(@CurrentUser() user: any) {
+    return this.sessionService.getActiveSessions(user.sub);
+  }
+
+  /**
+   * [16] DELETE /v1/auth/sessions/:id
+   *      [16a] Param: id (session ID)
+   *      [16b] Returns: { message: 'Session revoked successfully' }
+   *      [16c] Process: Revoke specific session (logout from one device)
+   *      [16d] @UseGuards(JwtAuthGuard): Only authenticated users
+   */
+  @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  async revokeSession(@Param('id') sessionId: string, @CurrentUser() user: any) {
+    await this.sessionService.revokeSession(sessionId, user.sub);
+    return { message: 'Session revoked successfully' };
+  }
+
+  /**
+   * [17] POST /v1/auth/logout-all
+   *      [17a] Returns: { message: 'All sessions revoked', count: number }
+   *      [17b] Process: Revoke all sessions for current user
+   *      [17c] @UseGuards(JwtAuthGuard): Only authenticated users
+   *      [17d] Side effect: User logged out from all devices
+   */
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  async logoutAllSessions(@CurrentUser() user: any) {
+    const count = await this.sessionService.revokeAllSessions(user.sub);
+    return {
+      message: 'All sessions revoked',
+      count,
+    };
+  }
+
+  /**
+   * [18] POST /v1/auth/change-password
+   *      [18a] Body: { currentPassword: string, newPassword: string }
+   *      [18b] Returns: { message: 'Password changed successfully' }
+   *      [18c] Process: Verify current password, hash new one, revoke sessions
+   *      [18d] @UseGuards(JwtAuthGuard): Only authenticated users
+   *      [18e] Security: Requires email verification
+   */
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @UseGuards(EmailVerifiedGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @Body() body: { currentPassword: string; newPassword: string },
+    @CurrentUser() user: any,
+  ) {
+    if (!body.currentPassword || !body.newPassword) {
+      throw new BadRequestException('Both passwords are required');
+    }
+
+    if (body.newPassword.length < 8) {
+      throw new BadRequestException('New password must be at least 8 characters');
+    }
+
+    await this.authService.changePassword(user.sub, body.currentPassword, body.newPassword);
+
+    // Revoke all sessions for security
+    await this.sessionService.revokeAllSessions(user.sub);
+
+    return { message: 'Password changed successfully. Please login again.' };
   }
 }

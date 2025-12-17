@@ -1,585 +1,346 @@
-/**
- * 🛒 Page de commande (Checkout) - Paiement et validation
- *
- * [1] Dépendances
- *     - useEffect: charger le panier au montage
- *     - useState: gestion du formulaire et des états
- *     - useRouter: redirection après succès
- *
- * Responsabilités:
- * - Afficher le formulaire de commande (infos + adresse + paiement)
- * - Afficher un récapitulatif sticky du panier
- * - Générer un numéro de commande
- * - Vider le panier après validation
- * - Rediriger vers l'accueil
- */
-
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import Head from 'next/head';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 
-// [2] Interface CartItem: structure d'un article dans le panier
+interface Address {
+  id: string;
+  label: string;
+  line1: string;
+  line2?: string;
+  city: string;
+  country: string;
+  phoneNumber?: string;
+  isDefault: boolean;
+}
+
 interface CartItem {
   id: string;
-  title: string;
-  price: string;
   quantity: number;
+}
+interface VendorGroup {
+  vendor: {
+    id: string;
+    name: string;
+  };
+  items: CartItem[];
+  subtotal: number;
+}
+
+interface Cart {
+  id: string;
+  total: number;
+  vendorGroups: VendorGroup[];
 }
 
 export default function CheckoutPage() {
-  // [3] Hooks
   const router = useRouter();
-
-  // [4] États du composant
-  //     - cart: articles dans le panier
-  //     - user: info utilisateur authentifié
-  //     - formData: données saisies dans le formulaire
-  //     - orderPlaced: booléen pour afficher la confirmation
-  //     - orderId: numéro de commande généré
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [user, setUser] = useState<any>(null);
+  const [cart, setCart] = useState<Cart | null>(null);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [selectedAddresses, setSelectedAddresses] = useState<{ [vendorId: string]: string }>({});
   const [loading, setLoading] = useState(true);
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    zipCode: '',
-    paymentMethod: 'card',
-  });
-  const [orderPlaced, setOrderPlaced] = useState(false);
-  const [orderId, setOrderId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  // [5] Hook useEffect: charger le panier et les infos utilisateur au montage
-  //     WHY: Vérifier l'authentification et remplir le formulaire avec l'email
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3001';
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [cartRes, addressRes] = await Promise.all([
+        fetch(`${API_BASE}/v1/cart`),
+        fetch(`${API_BASE}/v1/addresses`),
+      ]);
+
+      const cartData = await cartRes.json();
+      const addressData = await addressRes.json();
+
+      setCart(cartData);
+      setAddresses(addressData);
+
+      // Pre-select default address for all vendors
+      const defaultAddress = addressData.find((a: Address) => a.isDefault);
+      if (defaultAddress && cartData.vendorGroups) {
+        const initialSelection: { [key: string]: string } = {};
+        cartData.vendorGroups.forEach((vg: VendorGroup) => {
+          initialSelection[vg.vendor.id] = defaultAddress.id;
+        });
+        setSelectedAddresses(initialSelection);
+      }
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [API_BASE]);
+
   useEffect(() => {
-    // [5a] Récupérer le token et les données utilisateur
-    const token = localStorage.getItem('accessToken');
-    const userStr = localStorage.getItem('user');
-    const cartStr = localStorage.getItem('cart');
+    fetchData();
+  }, [fetchData]);
 
-    // [5b] Si pas de token: rediriger vers l'authentification
-    if (!token) {
-      router.push('/auth');
+  const handleCheckout = async () => {
+    if (!cart) return;
+
+    // Validate all vendors have addresses
+    const missingVendors = cart.vendorGroups.filter((vg) => !selectedAddresses[vg.vendor.id]);
+
+    if (missingVendors.length > 0) {
+      alert('Veuillez sélectionner une adresse pour chaque vendeur');
       return;
     }
 
-    // [5c] Pré-remplir l'email du formulaire avec l'email de l'utilisateur
-    if (userStr) {
-      const userData = JSON.parse(userStr);
-      setUser(userData);
-      setFormData((prev) => ({
-        ...prev,
-        email: userData.email,
+    setSubmitting(true);
+
+    try {
+      const vendorShipping = cart.vendorGroups.map((vg) => ({
+        vendorId: vg.vendor.id,
+        addressId: selectedAddresses[vg.vendor.id],
       }));
+
+      const res = await fetch(`${API_BASE}/v1/orders/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendorShipping }),
+      });
+
+      if (res.ok) {
+        const order = await res.json();
+        alert(`Commande créée avec succès ! N° ${order.id}`);
+        router.push('/');
+      } else {
+        const error = await res.json();
+        alert(`Erreur: ${error.message || 'Une erreur est survenue'}`);
+      }
+    } catch (error) {
+      console.error('Checkout failed:', error);
+      alert('Erreur lors de la commande');
+    } finally {
+      setSubmitting(false);
     }
-
-    // [5d] Charger le panier depuis localStorage
-    if (cartStr) {
-      setCart(JSON.parse(cartStr));
-    }
-
-    // [5e] Arrêter le loader
-    setLoading(false);
-  }, []);
-
-  // [6] Fonction pour calculer le prix total
-  //     WHY: Somme de (prix × quantité) pour tous les articles
-  const getTotalPrice = () => {
-    return cart
-      .reduce((total, item) => total + parseFloat(item.price) * item.quantity, 0)
-      .toFixed(2);
-  };
-
-  // [7] Fonction pour mettre à jour les champs du formulaire
-  //     WHY: Centraliser la logique d'update de formData
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  // [8] Fonction pour valider et placer la commande
-  //     WHY: Vérifier les données, générer l'ID commande, vider le panier
-  const handlePlaceOrder = (e: React.FormEvent) => {
-    // [8a] Empêcher le rechargement de la page
-    e.preventDefault();
-
-    // [8b] Valider tous les champs obligatoires
-    if (
-      !formData.firstName ||
-      !formData.lastName ||
-      !formData.address ||
-      !formData.city ||
-      !formData.zipCode
-    ) {
-      alert('⚠️ Veuillez remplir tous les champs');
-      return;
-    }
-
-    // [8c] Vérifier que le panier n'est pas vide
-    if (cart.length === 0) {
-      alert('⚠️ Le panier est vide');
-      return;
-    }
-
-    // [8d] Générer un numéro de commande unique basé sur le timestamp
-    const newOrderId = `ORD-${Date.now()}`;
-    setOrderId(newOrderId);
-    // [8e] Afficher la page de confirmation
-    setOrderPlaced(true);
-
-    // [8f] Effacer le panier
-    localStorage.removeItem('cart');
-
-    // [8g] Rediriger vers l'accueil après 3 secondes
-    setTimeout(() => {
-      router.push('/');
-    }, 3000);
   };
 
   if (loading) {
-    return <div style={{ padding: '40px', textAlign: 'center' }}>Chargement...</div>;
-  }
-
-  if (orderPlaced) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontFamily: 'system-ui',
-          background: '#f5f5f5',
-        }}
-      >
-        <div
-          style={{
-            background: 'white',
-            borderRadius: '12px',
-            padding: '60px 40px',
-            textAlign: 'center',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-            maxWidth: '500px',
-          }}
-        >
-          <div style={{ fontSize: '80px', marginBottom: '20px' }}>✅</div>
-          <h1 style={{ color: '#333', marginBottom: '10px' }}>Commande confirmée !</h1>
-          <p style={{ color: '#666', marginBottom: '20px' }}>
-            Merci pour votre achat. Votre commande a été enregistrée.
-          </p>
-          <div
-            style={{
-              background: '#f0f0f0',
-              padding: '20px',
-              borderRadius: '8px',
-              marginBottom: '30px',
-            }}
-          >
-            <p style={{ margin: 0, color: '#666' }}>
-              <strong>N° de commande:</strong>
-            </p>
-            <p
-              style={{
-                margin: '10px 0 0 0',
-                fontSize: '24px',
-                fontWeight: 'bold',
-                color: '#667eea',
-              }}
-            >
-              {orderId}
-            </p>
-          </div>
-          <p style={{ color: '#999', fontSize: '14px' }}>Redirection en cours...</p>
-        </div>
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <p>Chargement...</p>
       </div>
     );
   }
 
-  if (cart.length === 0) {
+  if (!cart || cart.vendorGroups.length === 0) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', fontFamily: 'system-ui' }}>
-        <p>Panier vide. Retour au catalogue...</p>
-        <button
-          onClick={() => router.push('/catalog')}
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <p>Votre panier est vide</p>
+        <Link href="/catalog" style={{ color: '#3b82f6', textDecoration: 'underline' }}>
+          Retour au catalogue
+        </Link>
+      </div>
+    );
+  }
+
+  if (addresses.length === 0) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <p style={{ marginBottom: '1rem' }}>
+          Vous devez d&apos;abord enregistrer une adresse de livraison
+        </p>
+        <Link
+          href="/addresses"
           style={{
-            marginTop: '20px',
-            padding: '10px 20px',
-            background: '#667eea',
-            color: 'white',
-            border: 'none',
+            display: 'inline-block',
+            padding: '0.75rem 1.5rem',
+            background: '#3b82f6',
+            color: '#fff',
+            textDecoration: 'none',
             borderRadius: '6px',
-            cursor: 'pointer',
+            fontWeight: 'bold',
           }}
         >
-          Aller au catalogue
-        </button>
+          Gérer mes adresses
+        </Link>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5', fontFamily: 'system-ui' }}>
-      {/* Header */}
-      <header
-        style={{
-          background: 'white',
-          borderBottom: '1px solid #e0e0e0',
-          padding: '20px 40px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        }}
-      >
-        <button
-          onClick={() => router.push('/catalog')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#667eea',
-            cursor: 'pointer',
-            fontSize: '16px',
-            fontWeight: '500',
-          }}
-        >
-          ← Retour au panier
-        </button>
-      </header>
+    <>
+      <Head>
+        <title>Checkout - Alove</title>
+      </Head>
 
-      {/* Main Content */}
-      <main style={{ padding: '40px', maxWidth: '1200px', margin: '0 auto' }}>
-        <h1 style={{ marginBottom: '30px', color: '#333' }}>📦 Passer la commande</h1>
-
+      <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 400px',
-            gap: '40px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '2rem',
           }}
         >
-          {/* Formulaire */}
-          <form onSubmit={handlePlaceOrder}>
-            <div
-              style={{
-                background: 'white',
-                borderRadius: '12px',
-                padding: '30px',
-                marginBottom: '30px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              }}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <Link
+              href="/"
+              style={{ fontSize: '1.5rem', textDecoration: 'none' }}
+              title="Retour à l'accueil"
             >
-              <h2 style={{ margin: '0 0 20px 0', fontSize: '20px', color: '#333' }}>
-                👤 Informations personnelles
-              </h2>
+              🏠
+            </Link>
+            <h1 style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0 }}>
+              💳 Finaliser la commande
+            </h1>
+          </div>
+          <Link href="/cart" style={{ color: '#3b82f6', textDecoration: 'underline' }}>
+            ← Retour au panier
+          </Link>
+        </div>
 
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
+          {/* Left: Vendor groups with address selection */}
+          <div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>
+              Sélection des adresses de livraison
+            </h2>
+
+            {cart.vendorGroups.map((group) => (
               <div
+                key={group.vendor.id}
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '15px',
-                  marginBottom: '20px',
+                  marginBottom: '1.5rem',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '1.5rem',
+                  background: '#fff',
                 }}
               >
-                <input
-                  type="text"
-                  name="firstName"
-                  placeholder="Prénom"
-                  value={formData.firstName}
-                  onChange={handleInputChange}
-                  required
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                  📦 {group.vendor.name}
+                </h3>
+                <p style={{ color: '#6b7280', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                  {group.items.length} article(s) · {group.subtotal.toLocaleString()} XOF
+                </p>
+
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                  Adresse de livraison pour ce vendeur:
+                </label>
+                <select
+                  value={selectedAddresses[group.vendor.id] || ''}
+                  onChange={(e) =>
+                    setSelectedAddresses({
+                      ...selectedAddresses,
+                      [group.vendor.id]: e.target.value,
+                    })
+                  }
                   style={{
-                    padding: '12px',
-                    border: '1px solid #e0e0e0',
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '1px solid #d1d5db',
                     borderRadius: '6px',
-                    fontSize: '14px',
+                    fontSize: '1rem',
                   }}
-                />
-                <input
-                  type="text"
-                  name="lastName"
-                  placeholder="Nom"
-                  value={formData.lastName}
-                  onChange={handleInputChange}
-                  required
-                  style={{
-                    padding: '12px',
-                    border: '1px solid #e0e0e0',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
-                />
+                >
+                  <option value="">-- Choisir une adresse --</option>
+                  {addresses.map((addr) => (
+                    <option key={addr.id} value={addr.id}>
+                      {addr.label} - {addr.line1}, {addr.city} {addr.isDefault && '⭐'}
+                    </option>
+                  ))}
+                </select>
+
+                <div style={{ marginTop: '1rem' }}>
+                  <Link
+                    href="/addresses"
+                    style={{
+                      fontSize: '0.875rem',
+                      color: '#3b82f6',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    + Gérer mes adresses
+                  </Link>
+                </div>
               </div>
+            ))}
+          </div>
 
-              <input
-                type="email"
-                name="email"
-                placeholder="Email"
-                value={formData.email}
-                onChange={handleInputChange}
-                disabled
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  marginBottom: '15px',
-                  background: '#f9f9f9',
-                  boxSizing: 'border-box',
-                }}
-              />
-
-              <input
-                type="tel"
-                name="phone"
-                placeholder="Téléphone (+225XXXXXXXXX)"
-                value={formData.phone}
-                onChange={handleInputChange}
-                required
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  marginBottom: '15px',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
-
-            <div
-              style={{
-                background: 'white',
-                borderRadius: '12px',
-                padding: '30px',
-                marginBottom: '30px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              }}
-            >
-              <h2 style={{ margin: '0 0 20px 0', fontSize: '20px', color: '#333' }}>
-                📍 Adresse de livraison
-              </h2>
-
-              <input
-                type="text"
-                name="address"
-                placeholder="Rue et numéro"
-                value={formData.address}
-                onChange={handleInputChange}
-                required
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  marginBottom: '15px',
-                  boxSizing: 'border-box',
-                }}
-              />
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                <input
-                  type="text"
-                  name="city"
-                  placeholder="Ville"
-                  value={formData.city}
-                  onChange={handleInputChange}
-                  required
-                  style={{
-                    padding: '12px',
-                    border: '1px solid #e0e0e0',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
-                />
-                <input
-                  type="text"
-                  name="zipCode"
-                  placeholder="Code postal"
-                  value={formData.zipCode}
-                  onChange={handleInputChange}
-                  required
-                  style={{
-                    padding: '12px',
-                    border: '1px solid #e0e0e0',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                  }}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: 'white',
-                borderRadius: '12px',
-                padding: '30px',
-                marginBottom: '30px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              }}
-            >
-              <h2 style={{ margin: '0 0 20px 0', fontSize: '20px', color: '#333' }}>💳 Paiement</h2>
-
-              <select
-                name="paymentMethod"
-                value={formData.paymentMethod}
-                onChange={handleInputChange}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  boxSizing: 'border-box',
-                }}
-              >
-                <option value="card">💳 Carte bancaire</option>
-                <option value="momo">📱 Mobile Money</option>
-                <option value="transfer">🏦 Virement bancaire</option>
-                <option value="cash">💵 Paiement à la livraison</option>
-              </select>
-            </div>
-
-            <button
-              type="submit"
-              style={{
-                width: '100%',
-                padding: '15px',
-                background: '#ff8c00',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-              }}
-              onMouseOver={(e) => (e.currentTarget.style.background = '#e67e00')}
-              onMouseOut={(e) => (e.currentTarget.style.background = '#ff8c00')}
-            >
-              Passer la commande
-            </button>
-          </form>
-
-          {/* Résumé de commande */}
+          {/* Right: Summary & Checkout */}
           <div>
             <div
               style={{
-                background: 'white',
-                borderRadius: '12px',
-                padding: '30px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                border: '2px solid #3b82f6',
+                borderRadius: '8px',
+                padding: '1.5rem',
+                background: '#eff6ff',
                 position: 'sticky',
-                top: '20px',
+                top: '2rem',
               }}
             >
-              <h2 style={{ margin: '0 0 20px 0', fontSize: '20px', color: '#333' }}>📋 Résumé</h2>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem' }}>
+                Récapitulatif
+              </h3>
 
-              <div
-                style={{
-                  marginBottom: '20px',
-                  paddingBottom: '20px',
-                  borderBottom: '1px solid #e0e0e0',
-                }}
-              >
-                {cart.map((item) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      marginBottom: '15px',
-                      paddingBottom: '15px',
-                      borderBottom: '1px solid #f0f0f0',
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        marginBottom: '5px',
-                      }}
-                    >
-                      <span style={{ fontSize: '14px', color: '#333' }}>
-                        <strong>{item.title}</strong>
-                      </span>
-                      <span style={{ fontSize: '14px', color: '#666' }}>x{item.quantity}</span>
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        fontSize: '13px',
-                        color: '#999',
-                      }}
-                    >
-                      <span>
-                        {item.price}€ × {item.quantity}
-                      </span>
-                      <span>{(parseFloat(item.price) * item.quantity).toFixed(2)}€</span>
-                    </div>
+              {cart.vendorGroups.map((group) => (
+                <div
+                  key={group.vendor.id}
+                  style={{
+                    marginBottom: '0.75rem',
+                    paddingBottom: '0.75rem',
+                    borderBottom: '1px solid #bfdbfe',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.875rem' }}>{group.vendor.name}</span>
+                    <span style={{ fontWeight: '600' }}>{group.subtotal.toLocaleString()} XOF</span>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
 
               <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '15px 0',
-                  fontSize: '16px',
-                }}
+                style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '2px solid #3b82f6' }}
               >
-                <span style={{ color: '#666' }}>Sous-total:</span>
-                <span style={{ color: '#333', fontWeight: '600' }}>{getTotalPrice()}€</span>
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                >
+                  <span style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Total:</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#3b82f6' }}>
+                    {cart.total.toLocaleString()} XOF
+                  </span>
+                </div>
               </div>
 
-              <div
+              <button
+                onClick={handleCheckout}
+                disabled={
+                  submitting || Object.keys(selectedAddresses).length !== cart.vendorGroups.length
+                }
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '15px 0',
-                  borderTop: '1px solid #e0e0e0',
-                  fontSize: '16px',
-                }}
-              >
-                <span style={{ color: '#666' }}>Livraison:</span>
-                <span style={{ color: '#333', fontWeight: '600' }}>Gratuite</span>
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '15px',
-                  background: '#f5f5f5',
+                  width: '100%',
+                  marginTop: '1.5rem',
+                  padding: '1rem',
+                  border: 'none',
                   borderRadius: '6px',
-                  marginTop: '15px',
-                  fontSize: '18px',
+                  background: submitting ? '#9ca3af' : '#3b82f6',
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  fontSize: '1.125rem',
+                  cursor: submitting ? 'not-allowed' : 'pointer',
                 }}
               >
-                <span style={{ color: '#333', fontWeight: '600' }}>Total:</span>
-                <span style={{ color: '#ff8c00', fontWeight: '700' }}>{getTotalPrice()}€</span>
-              </div>
+                {submitting ? 'Traitement en cours...' : 'Confirmer la commande'}
+              </button>
 
               <p
                 style={{
-                  margin: '20px 0 0 0',
-                  fontSize: '12px',
-                  color: '#999',
+                  marginTop: '1rem',
+                  fontSize: '0.75rem',
+                  color: '#6b7280',
                   textAlign: 'center',
                 }}
               >
-                ✅ Paiement sécurisé & crypté
+                En cliquant sur &quot;Confirmer&quot;, vous acceptez nos conditions générales de
+                vente
               </p>
             </div>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }

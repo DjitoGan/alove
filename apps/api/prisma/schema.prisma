@@ -1,57 +1,254 @@
 // ---------- Generators & datasource ----------
 generator client {
   provider = "prisma-client-js"
-  engineType = "library" 
+  engineType = "library"
   seed       = "ts-node ./prisma/seed.ts"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
-// ---------- MODELS MINIMAUX QUI COMPILE ----------
+// ---------- ENUMS ----------
+
+enum UserRole {
+  ADMIN
+  MERCHANT
+  CUSTOMER
+  SUPPORT
+}
+
+enum PartStatus {
+  DRAFT       // Brouillon, non publié
+  PUBLISHED   // Publié et visible
+  OUT_OF_STOCK // Rupture de stock
+  ARCHIVED    // Archivé, non visible
+}
+
+enum PartCondition {
+  NEW           // Neuf
+  USED_LIKE_NEW // Occasion comme neuf
+  USED_GOOD     // Occasion bon état
+  USED_FAIR     // Occasion état correct
+  REFURBISHED   // Reconditionné
+}
+
+// ---------- USER & AUTH ----------
 
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   password  String
+  name      String?
+  phoneNumber String?
+  role      UserRole @default(CUSTOMER)
+  isActive  Boolean  @default(true)
+  
+  // Sprint 4: Email verification
+  isEmailVerified Boolean @default(false)
+  
+  economyMode Boolean @default(false) // US-PERF-801: economy mode preference
+  lang      String  @default("fr") // US-I18N-901: user language preference (fr/en)
+  country   String  @default("TG") // ISO 3166-1 alpha-2
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relations
   orders    Order[]
-  vendors   Vendor[] // si un user peut aussi être vendeur (optionnel)
+  vendors   Vendor[]
+  favorites Favorite[]
+  carts     Cart[]
+  addresses Address[]
+  
+  // Sprint 4: Auth relations
+  emailOtps EmailVerificationOtp[]
+  passwordResetTokens PasswordResetToken[]
+  sessions Session[]
+  auditLogs AuditLog[]
 }
 
+// ---------- VENDOR ----------
+
 model Vendor {
-  id        String   @id @default(cuid())
-  name      String
-  userId    String?            // si un vendeur est rattaché à un user (facultatif)
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  contactPhone    String?
+  contactWhatsapp String?
+  whatsappEnabled Boolean  @default(false)
+  city            String?
+  country         String   @default("TG") // ISO 3166-1 alpha-2 (TG, BJ, NE)
+  
+  userId    String?
   user      User?   @relation(fields: [userId], references: [id])
 
   parts       Part[]
   orderItems  OrderItem[]
   shipments   Shipment[]
+  cartItems   CartItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+// ---------- YMM (Year/Make/Model) HIERARCHY ----------
+
+model VehicleMake {
+  id     String @id @default(cuid())
+  name   String @unique  // Toyota, Honda, Peugeot, etc.
+  logo   String?         // URL du logo
+
+  models VehicleModel[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VehicleModel {
+  id      String @id @default(cuid())
+  name    String        // Corolla, Civic, 307, etc.
+  
+  makeId  String
+  make    VehicleMake @relation(fields: [makeId], references: [id], onDelete: Cascade)
+
+  years   VehicleYear[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([makeId, name])
+  @@index([makeId])
+}
+
+model VehicleYear {
+  id      String @id @default(cuid())
+  year    Int           // 2018, 2019, 2020, etc.
+  
+  modelId String
+  model   VehicleModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  engines EngineSpec[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([modelId, year])
+  @@index([modelId])
+}
+
+model EngineSpec {
+  id         String @id @default(cuid())
+  code       String        // 1.8L, 2.0 TDI, 1.6 HDI, etc.
+  fuel       String?       // PETROL, DIESEL, HYBRID, ELECTRIC
+  capacityL  Float?        // Cylindrée en litres (1.8, 2.0, etc.)
+  powerHp    Int?          // Puissance en CV
+  
+  yearId     String
+  year       VehicleYear @relation(fields: [yearId], references: [id], onDelete: Cascade)
+
+  fitments   PartFitment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([yearId, code])
+  @@index([yearId])
+}
+
+// ---------- PART (enrichi) ----------
+
 model Part {
-  id        String   @id @default(cuid())
-  title     String
-  price     Decimal  @db.Decimal(10,2)
-  stock     Int      @default(0)
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  
+  // Prix et stock
+  price       Decimal  @db.Decimal(10,2)
+  currency    String   @default("XOF") // Franc CFA
+  stock       Int      @default(0)
+  
+  // État et statut
+  condition   PartCondition @default(USED_GOOD)
+  status      PartStatus    @default(DRAFT)
+  
+  // Références OEM (ex: ["0986AF0250", "15400-PLM-A01"])
+  oemRefs     String[]      @default([])
+  
+  // Localisation
+  city        String?
+  country     String   @default("TG")
+  
+  // Vendeur
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id])
 
-  vendorId  String
-  vendor    Vendor   @relation(fields: [vendorId], references: [id])
-
-  orderItems OrderItem[]
+  // Relations
+  images      PartImage[]
+  fitments    PartFitment[]
+  orderItems  OrderItem[]
+  favorites   Favorite[]
+  cartItems   CartItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([vendorId])
+  @@index([status])
+  @@index([condition])
+  @@index([country])
+}
+
+// ---------- PART FITMENT (compatibilité YMM) ----------
+
+model PartFitment {
+  id       String @id @default(cuid())
+  
+  partId   String
+  part     Part   @relation(fields: [partId], references: [id], onDelete: Cascade)
+  
+  engineId String
+  engine   EngineSpec @relation(fields: [engineId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([partId, engineId])
+  @@index([partId])
+  @@index([engineId])
+}
+
+// ---------- PART IMAGE ----------
+
+model PartImage {
+  id        String  @id @default(cuid())
+  url       String
+  thumbnail String? // URL miniature pour mode économie
+  alt       String?
+  sortOrder Int     @default(0)
+  
+  partId    String
+  part      Part    @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([partId])
+}
+
+// ---------- FAVORITE ----------
+
+model Favorite {
+  id     String @id @default(cuid())
+  
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  partId String
+  part   Part   @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, partId])
+  @@index([userId])
+  @@index([partId])
 }
 
 model Order {
@@ -64,6 +261,7 @@ model Order {
 
   items     OrderItem[]
   shipments Shipment[]
+  payments  Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -98,7 +296,12 @@ model OrderItem {
 
 model Shipment {
   id        String   @id @default(cuid())
-  status    String   @default("CREATED")
+  status    String   @default("CREATED") // CREATED, SHIPPED, DELIVERED, CANCELLED
+  carrier   String?  // Carrier name (DHL, FedEx, Local courier, etc.)
+  trackingNumber String? // Tracking number for shipment
+  pickupPin String?  // PIN for customer pickup verification
+  shippedAt   DateTime?
+  deliveredAt DateTime?
 
   // FK -> Order
   orderId String
@@ -113,4 +316,245 @@ model Shipment {
 
   @@index([orderId])
   @@index([vendorId])
+}
+
+// ---------- PAYMENT ----------
+
+model Payment {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  amount    Decimal  @db.Decimal(10,2)
+  currency  String   @default("XOF")
+  method    String   // MOBILE_MONEY, CARD, CASH_ON_PICKUP
+  status    String   @default("PENDING")
+  externalReference String?
+  errorMessage      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+}
+
+// ---------- IMPORT JOB (US-CAT-303) ----------
+
+enum ImportJobStatus {
+  PENDING     // En attente de traitement
+  PROCESSING  // En cours de traitement
+  COMPLETED   // Terminé avec succès
+  FAILED      // Échec global
+  CANCELLED   // Annulé
+}
+
+model ImportJob {
+  id           String          @id @default(cuid())
+  
+  // Fichier
+  filename     String          // Nom du fichier original
+  fileUrl      String?         // URL dans MinIO (optionnel)
+  
+  // Statut
+  status       ImportJobStatus @default(PENDING)
+  
+  // Statistiques
+  totalRows    Int             @default(0)   // Nombre total de lignes
+  processedRows Int            @default(0)   // Lignes traitées
+  successRows  Int             @default(0)   // Lignes importées avec succès
+  errorRows    Int             @default(0)   // Lignes en erreur
+  
+  // Timing
+  startedAt    DateTime?
+  completedAt  DateTime?
+  
+  // Rapport d'erreurs
+  errors       ImportRowError[]
+  
+  // Qui a lancé l'import
+  vendorId     String
+  userId       String?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([vendorId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ImportRowError {
+  id        String    @id @default(cuid())
+  
+  jobId     String
+  job       ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  rowNumber Int       // Numéro de ligne dans le CSV (1-indexed)
+  field     String?   // Champ en erreur (ex: "price", "oemRefs")
+  value     String?   // Valeur problématique
+  message   String    // Message d'erreur lisible
+  code      String?   // Code d'erreur machine (ex: "INVALID_PRICE", "MISSING_OEM")
+  
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([rowNumber])
+}
+
+// ---------- CART (US-ORD-401) ----------
+
+enum CartStatus {
+  ACTIVE      // Cart en cours d'utilisation
+  CHECKED_OUT // Converti en commande
+  ABANDONED   // Abandonné
+}
+
+model Cart {
+  id        String   @id @default(cuid())
+  status    CartStatus @default(ACTIVE)
+  
+  // Totaux calculés
+  subtotal  Decimal  @db.Decimal(10,2) @default(0)
+  total     Decimal  @db.Decimal(10,2) @default(0)
+  
+  // FK -> User
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  items     CartItem[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  quantity  Int      @default(1)
+  
+  // Prix unitaire snapshot (prix au moment de l'ajout)
+  unitPrice Decimal  @db.Decimal(10,2)
+  
+  // Snapshot de données pour résolution offline
+  partTitle String   // Titre de la pièce
+  partImage String?  // URL de l'image principale
+  vendorName String  // Nom du vendeur
+  
+  // FK -> Cart
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  
+  // FK -> Part
+  partId    String
+  part      Part     @relation(fields: [partId], references: [id])
+  
+  // FK -> Vendor
+  vendorId  String
+  vendor    Vendor   @relation(fields: [vendorId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, partId]) // Un seul item par pièce dans un panier
+  @@index([cartId])
+  @@index([partId])
+  @@index([vendorId])
+}
+
+// ---------- ADDRESS BOOK (US-ORD-402) ----------
+
+model Address {
+  id        String   @id @default(cuid())
+  label     String   // "Home", "Office", "Atelier", etc.
+  
+  // Adresse complète
+  line1     String   // Ligne 1
+  line2     String?  // Ligne 2 (optionnel)
+  city      String   // Ville
+  state     String?  // État/Région (optionnel)
+  postalCode String? // Code postal (optionnel)
+  country   String   @default("TG") // ISO 3166-1 alpha-2
+  
+  // Contact
+  phoneNumber String?
+  instructions String? @db.Text // Instructions de livraison spéciales
+  
+  isDefault Boolean  @default(false) // Adresse par défaut
+  
+  // FK -> User
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isDefault])
+}
+
+// ========== SPRINT 4: AUTHENTICATION ENHANCEMENTS ==========
+
+// Email Verification OTP
+model EmailVerificationOtp {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code      String   // 6-digit OTP code
+  attempts  Int      @default(0) // Failed attempts
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([userId, code])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Password Reset Token
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique // Random reset token
+  expiresAt DateTime
+  usedAt    DateTime? // Timestamp when token was used
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// User Sessions
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String   @unique // Hash of refresh token (not plaintext)
+  deviceInfo       String? // User agent
+  ipAddress        String? // IP address
+  lastActivityAt   DateTime @default(now())
+  expiresAt        DateTime // When refresh token expires
+  revokedAt        DateTime? // When session was revoked
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([userId, revokedAt])
+}
+
+// Audit Logs for security monitoring
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String   // LOGIN, LOGOUT, PASSWORD_CHANGE, EMAIL_VERIFIED, etc.
+  status    String   // SUCCESS, FAILED
+  reason    String? // Why it failed (e.g., "invalid_password")
+  ipAddress String?
+  userAgent String?
+  metadata  Json? // Extra info (e.g., device name, location)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
 }

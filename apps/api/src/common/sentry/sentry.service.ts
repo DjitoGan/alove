@@ -2,7 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as Sentry from '@sentry/node';
-import { ProfilingIntegration } from '@sentry/profiling-node';
+import { nodeProfilingIntegration } from '@sentry/profiling-node';
 
 @Injectable()
 export class SentryService {
@@ -25,7 +25,7 @@ export class SentryService {
       Sentry.init({
         dsn: sentryDsn,
         environment: this.configService.get<string>('NODE_ENV', 'development'),
-        integrations: [new ProfilingIntegration()],
+        integrations: [nodeProfilingIntegration()],
         tracesSampleRate: this.configService.get<string>('NODE_ENV') === 'production' ? 0.1 : 1.0,
         profilesSampleRate: this.configService.get<string>('NODE_ENV') === 'production' ? 0.1 : 1.0,
       });

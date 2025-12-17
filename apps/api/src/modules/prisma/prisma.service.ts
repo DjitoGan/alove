@@ -37,6 +37,8 @@
 
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 /**
  * [6] PRISMA SERVICE CLASS
@@ -46,6 +48,12 @@ import { PrismaClient } from '@prisma/client';
  */
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  constructor() {
+    // Initialize Prisma Client with pg driver adapter (Prisma v7)
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const adapter = new PrismaPg(pool);
+    super({ adapter });
+  }
   /**
    * [7] CONNECT TO DATABASE (ON APP START)
    *     [7a] Called automatically by NestJS during initialization

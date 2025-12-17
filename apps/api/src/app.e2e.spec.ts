@@ -21,7 +21,6 @@ import { AppModule } from './app.module';
 describe('ALOVE API E2E Integration Tests', () => {
   let app: INestApplication;
   let jwtToken: string;
-  let testUserId: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -39,9 +38,7 @@ describe('ALOVE API E2E Integration Tests', () => {
 
   describe('[HEALTH CHECK] — API Readiness', () => {
     it('GET /health should return 200', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/health')
-        .expect(HttpStatus.OK);
+      const response = await request(app.getHttpServer()).get('/health').expect(HttpStatus.OK);
 
       expect(response.body).toHaveProperty('status');
     });
@@ -79,7 +76,6 @@ describe('ALOVE API E2E Integration Tests', () => {
 
       expect(response.body).toHaveProperty('id');
       expect(response.body).toHaveProperty('email');
-      testUserId = response.body.id;
     });
 
     it('POST /v1/auth/login should return JWT token', async () => {
@@ -175,9 +171,7 @@ describe('ALOVE API E2E Integration Tests', () => {
     });
 
     it('GET /v1/invalid-endpoint should return 404', async () => {
-      await request(app.getHttpServer())
-        .get('/v1/invalid-endpoint')
-        .expect(HttpStatus.NOT_FOUND);
+      await request(app.getHttpServer()).get('/v1/invalid-endpoint').expect(HttpStatus.NOT_FOUND);
     });
   });
 

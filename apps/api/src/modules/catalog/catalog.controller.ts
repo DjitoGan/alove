@@ -23,12 +23,13 @@ import {
   Param,
   Query,
   UseGuards,
-  Request,
   HttpCode,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CatalogService } from './catalog.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { AdminOnlyGuard } from '../admin/guards/admin-only.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import {
   SearchCatalogQueryDto,
   BulkFilterCatalogDto,
@@ -141,9 +142,11 @@ export class CatalogController {
    *     Requires ADMIN role
    */
   @Get('stats')
-  @UseGuards(JwtAuthGuard, AdminOnlyGuard)
-  async getCategoryStats(@Request() req: any) {
-    // [8] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  async getCategoryStats() {
+    // [8] ADMIN ROLE VERIFIED BY RolesGuard
     const result = await this.catalogService.getCategoryStats();
 
     return {
@@ -161,10 +164,12 @@ export class CatalogController {
    *     Requires ADMIN role
    */
   @Post('categories')
-  @UseGuards(JwtAuthGuard, AdminOnlyGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
   @HttpCode(201)
-  async createCategory(@Body() createCategoryDto: CreateCategoryDto, @Request() req: any) {
-    // [10] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+  async createCategory(@Body() createCategoryDto: CreateCategoryDto) {
+    // [10] ADMIN ROLE VERIFIED BY RolesGuard
     const category = await this.catalogService.createCategory(createCategoryDto);
 
     return {
@@ -184,13 +189,14 @@ export class CatalogController {
    *      Requires ADMIN role
    */
   @Patch('categories/:id')
-  @UseGuards(JwtAuthGuard, AdminOnlyGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
   async updateCategory(
     @Param('id') categoryId: string,
     @Body() updateCategoryDto: UpdateCategoryDto,
-    @Request() req: any,
   ) {
-    // [12] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+    // [12] ADMIN ROLE VERIFIED BY RolesGuard
     const category = await this.catalogService.updateCategory(categoryId, updateCategoryDto);
 
     return {
@@ -209,9 +215,11 @@ export class CatalogController {
    *      Requires ADMIN role
    */
   @Delete('categories/:id')
-  @UseGuards(JwtAuthGuard, AdminOnlyGuard)
-  async deleteCategory(@Param('id') categoryId: string, @Request() req: any) {
-    // [14] ADMIN ROLE VERIFIED BY AdminOnlyGuard
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  async deleteCategory(@Param('id') categoryId: string) {
+    // [14] ADMIN ROLE VERIFIED BY RolesGuard
     const result = await this.catalogService.deleteCategory(categoryId);
 
     return {

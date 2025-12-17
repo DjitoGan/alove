@@ -17,7 +17,7 @@ export enum SortOption {
 export class CreateCategoryDto {
   // [2] CATEGORY NAME
   @IsString()
-  name: string;
+  name!: string;
 
   // [3] DESCRIPTION
   @IsOptional()

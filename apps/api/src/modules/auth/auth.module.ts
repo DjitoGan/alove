@@ -42,36 +42,54 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy'; // Access token (15m TTL)
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy'; // Refresh token (7d TTL)
 
-// [6] INFRASTRUCTURE MODULES
+// [6] SPRINT 4 SERVICES (Email Verification, Password Reset, Session, Audit)
+import { EmailVerificationService } from './services/email-verification.service';
+import { PasswordResetService } from './services/password-reset.service';
+import { SessionService } from './services/session.service';
+import { AuditLoggingService } from './services/audit-logging.service';
+
+// [7] GUARDS (Rate Limit, Email Verified)
+import { RateLimitGuard } from './guards/rate-limit.guard';
+import { EmailVerifiedGuard } from './guards/email-verified.guard';
+
+// [8] INTERCEPTORS (Audit Logging)
+import { AuditLoggingInterceptor } from './interceptors/audit-logging.interceptor';
+
+// [9] INFRASTRUCTURE MODULES
 //     Provide database & config to auth services
 import { PrismaModule } from '../prisma/prisma.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
   imports: [
-    // [7] DATABASE
+    // [10] DATABASE
     //     Prisma ORM for user lookups (find user by email, check password, etc.)
     PrismaModule,
 
-    // [8] PASSPORT SETUP
-    //     [8a] defaultStrategy: 'jwt' → @UseGuards automatically uses JwtStrategy
-    //     [8b] Allows adding more strategies (OAuth, Local) without changing decorators
+    // [11] NOTIFICATIONS
+    //     For sending verification codes and password reset emails
+    NotificationModule,
+
+    // [12] PASSPORT SETUP
+    //     [12a] defaultStrategy: 'jwt' → @UseGuards automatically uses JwtStrategy
+    //     [12b] Allows adding more strategies (OAuth, Local) without changing decorators
     PassportModule.register({ defaultStrategy: 'jwt' }),
 
-    // [9] JWT TOKEN GENERATION
-    //     [9a] registerAsync: Load config from environment (JWT_SECRET)
-    //     [9b] Dynamic loading allows different secrets for dev/prod
-    //     [9c] Inject ConfigService to access .env variables
+    // [13] JWT TOKEN GENERATION
+    //     [13a] registerAsync: Load config from environment (JWT_SECRET)
+    //     [13b] Dynamic loading allows different secrets for dev/prod
+    //     [13c] Inject ConfigService to access .env variables
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
-        // [9.1] Secret key for signing/verifying JWT tokens
-        //       MUST be kept secret! Used in production for all token verification
-        //       If leaked, attacker can forge tokens
+        // [13.1] Secret key for signing/verifying JWT tokens
+        //        MUST be kept secret! Used in production for all token verification
+        //        If leaked, attacker can forge tokens
         secret: configService.get<string>('JWT_SECRET'),
 
-        // [9.2] Default expiration for access tokens
-        //       Can override per token (e.g., refreshToken uses 7d)
+        // [13.2] Default expiration for access tokens
+        //        Can override per token (e.g., refreshToken uses 7d)
         signOptions: {
           expiresIn: '15m', // Access tokens valid for 15 minutes
         },
@@ -79,20 +97,39 @@ import { PrismaModule } from '../prisma/prisma.module';
     }),
   ],
 
-  // [10] CONTROLLERS
+  // [14] CONTROLLERS
   //      HTTP endpoints: POST /auth/register, /login, /refresh, GET /me
+  //      + Sprint 4: POST /verify-email, /resend-otp, /forgot-password, /reset-password, etc.
   controllers: [AuthController],
 
-  // [11] PROVIDERS
-  //      [11a] AuthService: Core auth logic (register, login, JWT generation)
-  //      [11b] JwtStrategy: Validates access tokens (used by @UseGuards(JwtAuthGuard))
-  //      [11c] JwtRefreshStrategy: Validates refresh tokens (used by @UseGuards(JwtRefreshGuard))
-  providers: [AuthService, JwtStrategy, JwtRefreshStrategy],
+  // [15] PROVIDERS
+  //      [15a] AuthService: Core auth logic (register, login, JWT generation, password change)
+  //      [15b] JwtStrategy: Validates access tokens (used by @UseGuards(JwtAuthGuard))
+  //      [15c] JwtRefreshStrategy: Validates refresh tokens (used by @UseGuards(JwtRefreshGuard))
+  //      [15d] EmailVerificationService: Manage OTP flow
+  //      [15e] PasswordResetService: Manage secure password reset
+  //      [15f] SessionService: Track user sessions, revocation, device info
+  //      [15g] AuditLoggingService: Log security-related actions
+  //      [15h] RateLimitGuard: Prevent brute force attacks
+  //      [15i] EmailVerifiedGuard: Require email verification for sensitive ops
+  //      [15j] AuditLoggingInterceptor: Intercept & log auth requests
+  providers: [
+    AuthService,
+    JwtStrategy,
+    JwtRefreshStrategy,
+    EmailVerificationService,
+    PasswordResetService,
+    SessionService,
+    AuditLoggingService,
+    RateLimitGuard,
+    EmailVerifiedGuard,
+    AuditLoggingInterceptor,
+  ],
 
-  // [12] EXPORTS
-  //      [12a] AuthService can be injected in other modules
-  //      [12b] Used by: OrderModule, NotificationModule, AdminModule (future)
-  //      [12c] For user validation, JWT verification, etc.
-  exports: [AuthService],
+  // [16] EXPORTS
+  //      [16a] AuthService can be injected in other modules
+  //      [16b] Used by: OrderModule, NotificationModule, AdminModule (future)
+  //      [16c] For user validation, JWT verification, etc.
+  exports: [AuthService, AuditLoggingService],
 })
 export class AuthModule {}
