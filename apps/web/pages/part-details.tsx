@@ -12,11 +12,10 @@
  * - Ajouter au panier avec redirection
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 
-// [2] Configuration API
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3001';
+// [2] Configuration API (non utilisée ici)
 
 // [3] Interface Part: toutes les infos d'une pièce détachée
 interface Part {
@@ -27,6 +26,17 @@ interface Part {
   createdAt: string;
   vendorId: string;
   updatedAt: string;
+}
+
+interface Review {
+  author: string;
+  rating: number;
+  comment: string;
+  date: string;
+}
+
+interface CartItem extends Part {
+  quantity: number;
 }
 
 export default function PartDetailsPage() {
@@ -43,7 +53,7 @@ export default function PartDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const [reviews, setReviews] = useState<any[]>([
+  const [reviews] = useState<Review[]>([
     {
       author: 'Ahmed M.',
       rating: 5,
@@ -64,11 +74,11 @@ export default function PartDetailsPage() {
   useEffect(() => {
     if (!id) return;
     fetchPart();
-  }, [id]);
+  }, [id, fetchPart]);
 
   // [7] Fonction pour charger les détails d'une pièce
   //     WHY: Récupérer les données de la pièce (actuellement mock data)
-  const fetchPart = async () => {
+  const fetchPart = useCallback(async () => {
     try {
       setLoading(true);
       // [7a] En dev, créer une pièce de demo (API n'a pas encore le endpoint détail)
@@ -98,14 +108,14 @@ export default function PartDetailsPage() {
 
       // [7c] Stocker la pièce dans l'état
       setPart(mockPart);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // [7d] Afficher les erreurs
-      setError(err.message);
+      setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
       // [7e] Arrêter le loader
       setLoading(false);
     }
-  };
+  }, [id]);
 
   // [8] Fonction pour ajouter la pièce au panier
   //     WHY: Sauvegarder le panier dans localStorage et rediriger
@@ -114,9 +124,9 @@ export default function PartDetailsPage() {
     if (!part) return;
 
     // [8b] Récupérer le panier existant depuis localStorage
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+    const cart: CartItem[] = JSON.parse(localStorage.getItem('cart') || '[]');
     // [8c] Chercher si la pièce est déjà dans le panier
-    const existingItem = cart.find((item: any) => item.id === part.id);
+    const existingItem = cart.find((item) => item.id === part.id);
 
     // [8d] Incrémenter quantité ou ajouter nouvel item
     if (existingItem) {

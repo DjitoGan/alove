@@ -19,8 +19,9 @@
  * - Vérifier l'authentification
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 
 // [3] Configuration de l'API depuis .env ou fallback local
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3001';
@@ -47,6 +48,19 @@ interface CartItem extends Part {
   quantity: number; // Quantité choisie par l'utilisateur
 }
 
+// Types pour la réponse API du panier
+interface ApiCartItem {
+  partId: string;
+  partTitle: string;
+  part: { price: number | string; stock: number };
+  quantity: number;
+  createdAt: string;
+}
+
+interface ApiCartGroup {
+  items: ApiCartItem[];
+}
+
 export default function CatalogPage() {
   // [7] Hook useRouter pour navigation programmatique
   const router = useRouter();
@@ -71,12 +85,6 @@ export default function CatalogPage() {
   const [showCart, setShowCart] = useState(false); // Afficher l'overlay du panier?
 
   useEffect(() => {
-    // Charger le panier depuis localStorage
-    const savedCart = localStorage.getItem('cart');
-    if (savedCart) {
-      setCart(JSON.parse(savedCart));
-    }
-
     // Vérifier si l'utilisateur est connecté
     const token = localStorage.getItem('accessToken');
     const userStr = localStorage.getItem('user');
@@ -91,7 +99,43 @@ export default function CatalogPage() {
     }
 
     fetchParts();
-  }, [page]);
+    fetchCartFromAPI();
+  }, [page, router, /* ensures stable refs */ fetchParts, fetchCartFromAPI]);
+
+  // Charger le panier depuis l'API
+  const fetchCartFromAPI = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/v1/cart`);
+      if (response.ok) {
+        const cartData = await response.json();
+        // Convertir le format API vers le format local
+        if (cartData.vendorGroups && cartData.vendorGroups.length > 0) {
+          const localCart: CartItem[] = [];
+          (cartData.vendorGroups as ApiCartGroup[]).forEach((group) => {
+            group.items.forEach((item: ApiCartItem) => {
+              localCart.push({
+                id: item.partId,
+                title: item.partTitle,
+                price: item.part.price.toString(),
+                stock: item.part.stock,
+                quantity: item.quantity,
+                createdAt: item.createdAt,
+              });
+            });
+          });
+          setCart(localCart);
+          localStorage.setItem('cart', JSON.stringify(localCart));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch cart:', error);
+      // En cas d'erreur, charger depuis localStorage
+      const savedCart = localStorage.getItem('cart');
+      if (savedCart) {
+        setCart(JSON.parse(savedCart));
+      }
+    }
+  }, []);
 
   // Filtrer les pièces selon la recherche
   useEffect(() => {
@@ -103,14 +147,14 @@ export default function CatalogPage() {
 
   // [9] Fonction pour charger les pièces depuis l'API
   //     WHY: Récupérer les données du serveur avec pagination
-  const fetchParts = async () => {
+  const fetchParts = useCallback(async () => {
     try {
       // [9a] Afficher le loader
       setLoading(true);
 
       // [9b] Appel API GET /v1/v1/parts?page=X
       //      Retourne: { items: Part[], hasMore: boolean, total: number }
-      const response = await fetch(`${API_BASE}/v1/v1/parts?page=${page}`);
+      const response = await fetch(`${API_BASE}/v1/parts?page=${page}`);
       const data = await response.json();
 
       // [9c] Vérifier le code de statut HTTP
@@ -121,14 +165,14 @@ export default function CatalogPage() {
       // [9d] Stocker les pièces et l'info de pagination
       setParts(data.items);
       setHasMore(data.hasMore);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // [9e] Afficher les erreurs
-      setError(err.message);
+      setError(err instanceof Error ? err.message : 'Erreur lors du chargement des pièces');
     } finally {
       // [9f] Arrêter le loader
       setLoading(false);
     }
-  };
+  }, [page]);
 
   // [10] Fonction pour se déconnecter
   //      WHY: Nettoyer localStorage et rediriger vers l'accueil
@@ -142,25 +186,42 @@ export default function CatalogPage() {
   };
 
   // [11] Fonction pour ajouter une pièce au panier
-  //      WHY: Incrémenter quantité si existe, ou ajouter nouvel item
-  const addToCart = (part: Part) => {
-    // [11a] Chercher si la pièce est déjà dans le panier
-    const existingItem = cart.find((item) => item.id === part.id);
+  //      WHY: Appeler l'API du panier pour persister les données
+  const addToCart = async (part: Part) => {
+    try {
+      const response = await fetch(`${API_BASE}/v1/cart/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          partId: part.id,
+          quantity: 1,
+        }),
+      });
 
-    let newCart: CartItem[];
-    if (existingItem) {
-      // [11b] Si existe: incrémenter la quantité
-      newCart = cart.map((item) =>
-        item.id === part.id ? { ...item, quantity: item.quantity + 1 } : item
-      );
-    } else {
-      // [11c] Si n'existe pas: ajouter nouvel item avec quantity=1
-      newCart = [...cart, { ...part, quantity: 1 }];
+      if (response.ok) {
+        await response.json();
+        alert(`✅ Article ajouté au panier !`);
+
+        // Mettre à jour le panier local pour afficher l'overlay
+        const existingItem = cart.find((item) => item.id === part.id);
+        let newCart: CartItem[];
+        if (existingItem) {
+          newCart = cart.map((item) =>
+            item.id === part.id ? { ...item, quantity: item.quantity + 1 } : item
+          );
+        } else {
+          newCart = [...cart, { ...part, quantity: 1 }];
+        }
+        setCart(newCart);
+        localStorage.setItem('cart', JSON.stringify(newCart));
+      } else {
+        const error = await response.json();
+        alert(`❌ Erreur: ${error.message || "Impossible d'ajouter au panier"}`);
+      }
+    } catch (error) {
+      console.error('Failed to add to cart:', error);
+      alert('❌ Erreur de connexion au serveur');
     }
-
-    // [11d] Mettre à jour l'état et localStorage
-    setCart(newCart);
-    localStorage.setItem('cart', JSON.stringify(newCart));
   };
 
   // [12] Fonction pour retirer une pièce du panier
@@ -203,9 +264,10 @@ export default function CatalogPage() {
           `✅ Profil chargé:\n\nID: ${data.id}\nEmail: ${data.email}\nCréé le: ${new Date(data.createdAt).toLocaleString('fr-FR')}`
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // [14d] Afficher les erreurs
-      alert('❌ Erreur: ' + err.message);
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue';
+      alert('❌ Erreur: ' + msg);
     }
   };
 
@@ -237,11 +299,20 @@ export default function CatalogPage() {
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
         }}
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: '24px', color: '#333' }}>🔧 ALOVE Catalog</h1>
-          <p style={{ margin: '5px 0 0 0', color: '#666', fontSize: '14px' }}>
-            Marketplace de pièces auto d'occasion
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <Link
+            href="/"
+            style={{ fontSize: '1.5rem', textDecoration: 'none' }}
+            title="Retour à l'accueil"
+          >
+            🏠
+          </Link>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '24px', color: '#333' }}>🔧 ALOVE Catalog</h1>
+            <p style={{ margin: '5px 0 0 0', color: '#666', fontSize: '14px' }}>
+              Marketplace de pièces auto d&apos;occasion
+            </p>
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>

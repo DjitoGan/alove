@@ -47,7 +47,7 @@ export default function DashboardPage() {
   //     - loading: loader pendant le chargement initial
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [orders, setOrders] = useState<Order[]>([
+  const [orders] = useState<Order[]>([
     {
       id: 'ORD-1702774800000',
       totalPrice: '125.50',
@@ -91,7 +91,7 @@ export default function DashboardPage() {
 
     // [7d] Arrêter le loader
     setLoading(false);
-  }, []);
+  }, [router]);
 
   // [8] Fonction pour se déconnecter
   //     WHY: Nettoyer localStorage et rediriger vers l'accueil
@@ -128,9 +128,10 @@ export default function DashboardPage() {
           `✅ Profil:\n\nID: ${data.id}\nEmail: ${data.email}\nCréé le: ${new Date(data.createdAt).toLocaleString('fr-FR')}\n\nCompte actif depuis ${daysSinceCreation} jours`
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // [9e] Afficher les erreurs
-      alert('❌ Erreur: ' + err.message);
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue';
+      alert('❌ Erreur: ' + msg);
     }
   };
 
