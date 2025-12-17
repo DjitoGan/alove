@@ -55,9 +55,7 @@ export class CatalogController {
    *       - GET /v1/catalog/search?vendor=corsair&sort=rating → Corsair products, best rated
    */
   @Get('search')
-  async searchCatalog(
-    @Query() query: SearchCatalogQueryDto,
-  ) {
+  async searchCatalog(@Query() query: SearchCatalogQueryDto) {
     const result = await this.catalogService.searchCatalog(query);
 
     return {
@@ -75,9 +73,7 @@ export class CatalogController {
    *     No authentication required
    */
   @Post('filter')
-  async bulkFilterCatalog(
-    @Body() filters: BulkFilterCatalogDto,
-  ) {
+  async bulkFilterCatalog(@Body() filters: BulkFilterCatalogDto) {
     const result = await this.catalogService.bulkFilterCatalog(filters);
 
     return {
@@ -94,9 +90,7 @@ export class CatalogController {
    *     No authentication required
    */
   @Get('trending')
-  async getTrendingProducts(
-    @Query('limit') limit: string = '10',
-  ) {
+  async getTrendingProducts(@Query('limit') limit: string = '10') {
     const result = await this.catalogService.getTrendingProducts(parseInt(limit, 10));
 
     return {
@@ -113,9 +107,7 @@ export class CatalogController {
    *     No authentication required
    */
   @Get('featured')
-  async getFeaturedProducts(
-    @Query('limit') limit: string = '5',
-  ) {
+  async getFeaturedProducts(@Query('limit') limit: string = '5') {
     const result = await this.catalogService.getFeaturedProducts(parseInt(limit, 10));
 
     return {
@@ -150,9 +142,7 @@ export class CatalogController {
    */
   @Get('stats')
   @UseGuards(JwtAuthGuard, AdminOnlyGuard)
-  async getCategoryStats(
-    @Request() req: any,
-  ) {
+  async getCategoryStats(@Request() req: any) {
     // [8] ADMIN ROLE VERIFIED BY AdminOnlyGuard
     const result = await this.catalogService.getCategoryStats();
 
@@ -173,10 +163,7 @@ export class CatalogController {
   @Post('categories')
   @UseGuards(JwtAuthGuard, AdminOnlyGuard)
   @HttpCode(201)
-  async createCategory(
-    @Body() createCategoryDto: CreateCategoryDto,
-    @Request() req: any,
-  ) {
+  async createCategory(@Body() createCategoryDto: CreateCategoryDto, @Request() req: any) {
     // [10] ADMIN ROLE VERIFIED BY AdminOnlyGuard
     const category = await this.catalogService.createCategory(createCategoryDto);
 
@@ -223,10 +210,7 @@ export class CatalogController {
    */
   @Delete('categories/:id')
   @UseGuards(JwtAuthGuard, AdminOnlyGuard)
-  async deleteCategory(
-    @Param('id') categoryId: string,
-    @Request() req: any,
-  ) {
+  async deleteCategory(@Param('id') categoryId: string, @Request() req: any) {
     // [14] ADMIN ROLE VERIFIED BY AdminOnlyGuard
     const result = await this.catalogService.deleteCategory(categoryId);
 
