@@ -32,6 +32,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
+import { EmailTemplate } from '../notifications/dto/send-email.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Prisma } from '@prisma/client';
 
@@ -160,7 +161,7 @@ export class OrdersService {
       .sendEmail(
         {
           to: 'customer@example.com', // TODO: Get from user object
-          template: 'ORDER_CONFIRMATION',
+          template: EmailTemplate.ORDER_CONFIRMATION,
           variables: {
             orderId: order!.id,
             totalAmount: total.toString(),

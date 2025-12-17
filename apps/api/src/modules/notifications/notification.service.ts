@@ -74,7 +74,7 @@ export class NotificationService {
 
     // [6] STORE DEDUP KEY IN REDIS
     //     TTL: 5 minutes (300 seconds)
-    await this.redis.setex(dedupeKey, 300, messageId);
+    await this.redis.set(dedupeKey, messageId, 300);
 
     // [7] QUEUE EMAIL VIA SENDGRID
     //     TODO: Integrate SendGrid API
@@ -101,8 +101,9 @@ export class NotificationService {
       //   },
       // });
       this.logger.debug(`Email queued: ${messageId} to ${sendEmailDto.to}`);
-    } catch (error) {
-      this.logger.error(`Failed to log email: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to log email: ${errorMessage}`);
     }
 
     // [9] RETURN MESSAGE ID TO CALLER
@@ -162,7 +163,7 @@ export class NotificationService {
 
     // [14] STORE DEDUP KEY IN REDIS
     //      TTL: 5 minutes (300 seconds)
-    await this.redis.setex(dedupeKey, 300, messageId);
+    await this.redis.set(dedupeKey, messageId, 300);
 
     // [15] QUEUE SMS VIA TWILIO
     //      TODO: Integrate Twilio API
@@ -188,8 +189,9 @@ export class NotificationService {
       //   },
       // });
       this.logger.debug(`SMS queued: ${messageId} to ${sendSmsDto.phoneNumber}`);
-    } catch (error) {
-      this.logger.error(`Failed to log SMS: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to log SMS: ${errorMessage}`);
     }
 
     // [17] RETURN MESSAGE ID TO CALLER
@@ -238,8 +240,9 @@ export class NotificationService {
         //   where: { messageId },
         //   data: { status: 'SENT' },
         // });
-      } catch (error) {
-        this.logger.error(`Failed to send message ${messageId}: ${error.message}`);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Failed to send message ${messageId}: ${errorMessage}`);
 
         // [22] UPDATE AUDIT LOG STATUS TO FAILED
         //      Uncomment when NotificationLog model exists

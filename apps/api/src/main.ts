@@ -29,6 +29,7 @@
 
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
 import { ValidationPipe, Logger } from '@nestjs/common';
@@ -61,6 +62,34 @@ async function bootstrap() {
   //     WHY? Allows future /v2 without breaking existing clients
   app.setGlobalPrefix('v1');
 
+  // [7.5] SWAGGER/OPENAPI DOCUMENTATION
+  //       Auto-generates interactive API documentation at /api/docs
+  //       Includes all endpoints, DTOs, request/response examples
+  const config = new DocumentBuilder()
+    .setTitle('ALOVE API')
+    .setDescription('Advanced E-commerce & Marketplace Platform API')
+    .setVersion('1.0')
+    .addTag('auth', 'Authentication & Authorization')
+    .addTag('otp', 'One-Time Password (OTP) Management')
+    .addTag('parts', 'Product Parts & Catalog')
+    .addTag('orders', 'Order Management & Tracking')
+    .addTag('payments', 'Payment Processing & Refunds')
+    .addTag('notifications', 'Email & SMS Notifications')
+    .addTag('admin', 'Admin User Management')
+    .addTag('analytics', 'Business Analytics & Reporting')
+    .addTag('catalog', 'Advanced Product Search & Discovery')
+    .addBearerAuth()
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayOperationId: true,
+      defaultModelsExpandDepth: 1,
+    },
+  });
+
   // [8] GLOBAL VALIDATION PIPE
   //     Applied to all POST/PUT/PATCH requests automatically
   //     [8a] transform: true = convert string to proper types (e.g., "123" → 123)
@@ -91,7 +120,8 @@ async function bootstrap() {
   // [11] STARTUP DIAGNOSTICS
   //      Log useful info for debugging (port, environment, database)
   logger.log(`🚀 ALOVE API listening on http://localhost:${port}/v1`);
-  logger.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.log(`� Swagger Docs: http://localhost:${port}/api/docs`);
+  logger.log(`�📝 Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.log(`🗄️  Database: ${process.env.DATABASE_URL?.split('@')[1] || 'not configured'}`);
 
   // [12] WHY these logs?

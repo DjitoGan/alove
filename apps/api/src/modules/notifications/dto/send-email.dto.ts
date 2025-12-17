@@ -19,12 +19,12 @@ export enum EmailTemplate {
 export class SendEmailDto {
   // [2] RECIPIENT EMAIL
   @IsEmail()
-  to: string;
+  to!: string;
 
   // [3] EMAIL TEMPLATE
   //     Which template to use for rendering
   @IsString()
-  template: EmailTemplate;
+  template!: EmailTemplate;
 
   // [4] TEMPLATE VARIABLES
   //     Data to inject into template (e.g., { orderId, userName, amount })

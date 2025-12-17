@@ -28,6 +28,7 @@ import { Injectable, BadRequestException, NotFoundException, Logger } from '@nes
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { NotificationService } from '../notifications/notification.service';
+import { EmailTemplate } from '../notifications/dto/send-email.dto';
 import { CreatePaymentDto, PaymentStatus } from './dto/create-payment.dto';
 import { VerifyPaymentDto } from './dto/verify-payment.dto';
 
@@ -180,7 +181,7 @@ export class PaymentService {
         .sendEmail(
           {
             to: 'customer@example.com', // TODO: Get from user object
-            template: 'PAYMENT_SUCCESS',
+            template: EmailTemplate.PAYMENT_SUCCESS,
             variables: {
               orderId: payment.orderId,
               amount: payment.amount.toString(),
@@ -202,7 +203,7 @@ export class PaymentService {
         .sendEmail(
           {
             to: 'customer@example.com', // TODO: Get from user object
-            template: 'PAYMENT_FAILED',
+            template: EmailTemplate.PAYMENT_FAILED,
             variables: {
               orderId: payment.orderId,
               amount: payment.amount.toString(),
@@ -314,7 +315,7 @@ export class PaymentService {
       .sendEmail(
         {
           to: 'customer@example.com', // TODO: Get from user object
-          template: 'REFUND_PROCESSED',
+          template: EmailTemplate.REFUND_PROCESSED,
           variables: {
             orderId: payment.orderId,
             refundAmount: payment.amount.toString(),
