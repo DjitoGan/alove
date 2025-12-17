@@ -9,6 +9,7 @@ import { OtpModule } from './modules/otp/otp.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentModule } from './modules/payments/payments.module';
+import { NotificationModule } from './modules/notifications/notification.module';
 import { HealthController } from './modules/health/health.controller';
 import { GlobalHttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor'; // garde comme tu l’as
@@ -37,6 +38,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor'; 
     PartsModule,
     OrdersModule,
     PaymentModule,
+    NotificationModule,
   ],
   controllers: [HealthController],
   providers: [
