@@ -1,0 +1,29 @@
+{
+  "folders": [
+    {
+      "path": ".",
+      "name": "📚 Documentation"
+    }
+  ],
+  "settings": {
+    "[markdown]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.formatOnSave": true,
+      "editor.wordWrap": "on",
+      "editor.lineNumbers": "relative"
+    },
+    "files.associations": {
+      "*.md": "markdown"
+    },
+    "markdown.preview.markEditorSelection": true,
+    "markdown.preview.scrollEditorWithPreview": true,
+    "markdown.preview.scrollPreviewWithEditor": true
+  },
+  "extensions": {
+    "recommendations": [
+      "yzhang.markdown-all-in-one",
+      "davidanson.vscode-markdownlint",
+      "github.copilot"
+    ]
+  }
+}

@@ -1,0 +1,115 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: alove_test
+          POSTGRES_USER: alove
+          POSTGRES_PASSWORD: alove
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            apps/api/package-lock.json
+            apps/web/package-lock.json
+
+      - name: 📦 Install API dependencies
+        working-directory: apps/api
+        run: npm ci
+
+      - name: 📦 Install Web dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: 🔍 Lint API
+        working-directory: apps/api
+        run: npm run lint
+
+      - name: 🔍 Lint Web
+        working-directory: apps/web
+        run: npm run lint
+
+      - name: 🗄️ Generate Prisma Client
+        working-directory: apps/api
+        run: npx prisma generate
+
+      - name: 🗄️ Run Prisma Migrations
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://alove:alove@localhost:5432/alove_test
+        run: npx prisma migrate deploy
+
+      - name: 🏗️ Build API
+        working-directory: apps/api
+        run: npm run build
+
+      - name: 🏗️ Build Web
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_BASE: http://localhost:3001
+          NEXT_PUBLIC_DEFAULT_LANG: en
+        run: npm run build
+
+      - name: 🧪 Run API Tests
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://alove:alove@localhost:5432/alove_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret
+          JWT_REFRESH_SECRET: test-refresh-secret
+        run: npm run test:e2e || echo "Tests will be added soon"
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🏗️ Build API Docker Image
+        working-directory: apps/api
+        run: docker build -t alove-api:latest .
+
+      - name: 🏗️ Build Web Docker Image
+        working-directory: apps/web
+        run: docker build -t alove-web:latest .

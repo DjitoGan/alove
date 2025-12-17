@@ -1,60 +1,98 @@
-version: "3.8"
+# Docker Compose v2 (sans clé "version")
+# Utilise infra/.env pour quelques variables simples (ports, DB)
 
 services:
   db:
     image: postgres:16
+    container_name: alove_db
     restart: unless-stopped
+    env_file: .env
     environment:
-      POSTGRES_DB: alove
-      POSTGRES_USER: alove
-      POSTGRES_PASSWORD: alove
-    ports: [ "5432:5432" ]
+      POSTGRES_DB: ${POSTGRES_DB:-alove}
+      POSTGRES_USER: ${POSTGRES_USER:-alove}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alove}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - alove_pg:/var/lib/postgresql/data
 
   redis:
     image: redis:7
+    container_name: alove_redis
     command: ["redis-server", "--appendonly", "yes"]
-    ports: [ "6379:6379" ]
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - alove_redis:/data
 
   meilisearch:
     image: getmeili/meilisearch:v1.7
+    container_name: alove_meilisearch
+    restart: unless-stopped
     environment:
       MEILI_NO_ANALYTICS: "true"
       MEILI_ENV: "development"
-      MEILI_MASTER_KEY: "dev-master-key"
-    ports: [ "7700:7700" ]
+      MEILI_MASTER_KEY: "${MEILI_MASTER_KEY:-dev-master-key}"
+    ports:
+      - "${MEILI_PORT:-7700}:7700"
     volumes:
       - alove_meili:/meili_data
 
   minio:
     image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    container_name: alove_minio
     command: server /data --console-address ":9001"
+    restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: alove
-      MINIO_ROOT_PASSWORD: alovealove
-    ports: [ "9000:9000", "9001:9001" ]
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-alove}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-alovealove}"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - alove_minio:/data
 
   api:
-    build: ./apps/api
-    env_file: ./apps/api/.env.development
-    depends_on: [ db, redis, meilisearch, minio ]
-    ports: [ "3001:3001" ]
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile.dev
+    container_name: alove_api
+    env_file:
+      - .env # pour PORT/API_URL éventuels
+      - ../apps/api/.env.development
+    depends_on:
+      - db
+      - redis
+      - meilisearch
+      - minio
+    ports:
+      - "${API_PORT:-3001}:3001"
     volumes:
-      - ./apps/api:/usr/src/app
+      # chemins relatifs robustes (basés sur l’emplacement de ce fichier)
+      - ../apps/api:/usr/src/app:delegated
+      # Exclure node_modules du host pour éviter les conflits d'architecture
+      - api_node_modules:/usr/src/app/node_modules
+    working_dir: /usr/src/app
     command: npm run start:dev
 
   web:
-    build: ./apps/web
-    env_file: ./apps/web/.env.development
-    depends_on: [ api ]
-    ports: [ "3000:3000" ]
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile.dev
+    container_name: alove_web
+    env_file:
+      - .env # pour WEB_PORT éventuel
+      - ../apps/web/.env.development
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-3000}:3000"
     volumes:
-      - ./apps/web:/usr/src/app
+      - ../apps/web:/usr/src/app:delegated
+      # Exclure node_modules du host pour éviter les conflits d'architecture
+      - web_node_modules:/usr/src/app/node_modules
+    working_dir: /usr/src/app
     command: npm run dev
 
 volumes:
@@ -62,3 +100,5 @@ volumes:
   alove_redis:
   alove_meili:
   alove_minio:
+  api_node_modules:
+  web_node_modules:
