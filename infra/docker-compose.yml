@@ -38,6 +38,12 @@ services:
       - "${MEILI_PORT:-7700}:7700"
     volumes:
       - alove_meili:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /meili_data/data.ms/data.mdb || exit 0"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+      start_period: 3s
 
   minio:
     image: minio/minio:RELEASE.2024-06-13T22-53-53Z
@@ -62,10 +68,14 @@ services:
       - .env # pour PORT/API_URL éventuels
       - ../apps/api/.env.development
     depends_on:
-      - db
-      - redis
-      - meilisearch
-      - minio
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      meilisearch:
+        condition: service_healthy
+      minio:
+        condition: service_started
     ports:
       - "${API_PORT:-3001}:3001"
     volumes:

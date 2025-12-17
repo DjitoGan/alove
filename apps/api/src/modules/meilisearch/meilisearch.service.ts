@@ -129,42 +129,57 @@ export class MeilisearchService implements OnModuleInit {
   }
 
   /**
-   * Initialize index on module startup
+   * Initialize index on module startup with retry logic
    */
   async onModuleInit(): Promise<void> {
-    try {
-      // Create or get index
-      await this.client.createIndex(this.PARTS_INDEX, { primaryKey: 'id' });
-      this.partsIndex = this.client.index(this.PARTS_INDEX);
+    const maxRetries = 15;
+    const retryDelayMs = 2000;
 
-      // Configure index settings
-      await this.partsIndex.updateSettings({
-        searchableAttributes: this.SEARCHABLE_ATTRIBUTES,
-        filterableAttributes: this.FILTERABLE_ATTRIBUTES,
-        sortableAttributes: this.SORTABLE_ATTRIBUTES,
-        // Typo tolerance settings
-        typoTolerance: {
-          enabled: true,
-          minWordSizeForTypos: {
-            oneTypo: 4, // Words with 4+ chars allow 1 typo
-            twoTypos: 8, // Words with 8+ chars allow 2 typos
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Check if Meilisearch is healthy
+        await this.client.health();
+
+        // Configure index settings
+        await this.partsIndex.updateSettings({
+          searchableAttributes: this.SEARCHABLE_ATTRIBUTES,
+          filterableAttributes: this.FILTERABLE_ATTRIBUTES,
+          sortableAttributes: this.SORTABLE_ATTRIBUTES,
+          // Typo tolerance settings
+          typoTolerance: {
+            enabled: true,
+            minWordSizeForTypos: {
+              oneTypo: 4, // Words with 4+ chars allow 1 typo
+              twoTypos: 8, // Words with 8+ chars allow 2 typos
+            },
           },
-        },
-        // Pagination
-        pagination: {
-          maxTotalHits: 10000,
-        },
-        // Faceting for filters
-        faceting: {
-          maxValuesPerFacet: 100,
-        },
-      });
+          // Pagination
+          pagination: {
+            maxTotalHits: 10000,
+          },
+          // Faceting for filters
+          faceting: {
+            maxValuesPerFacet: 100,
+          },
+        });
 
-      this.logger.log(`✅ Meilisearch index "${this.PARTS_INDEX}" configured`);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`❌ Failed to initialize Meilisearch: ${message}`);
-      // Don't throw - app should still work without search
+        this.logger.log(`✅ Meilisearch index "${this.PARTS_INDEX}" configured`);
+        return; // Success, exit retry loop
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        if (attempt < maxRetries) {
+          this.logger.warn(
+            `⚠️ Meilisearch init attempt ${attempt}/${maxRetries} failed: ${message}. Retrying in ${retryDelayMs}ms...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        } else {
+          this.logger.error(
+            `❌ Failed to initialize Meilisearch after ${maxRetries} attempts: ${message}`,
+          );
+          this.logger.warn('⚠️ Search functionality will be disabled');
+        }
+      }
     }
   }
 
@@ -173,6 +188,11 @@ export class MeilisearchService implements OnModuleInit {
    *     Called when part is created or updated
    */
   async indexPart(part: PartDocument): Promise<void> {
+    if (!this.partsIndex) {
+      this.logger.warn('Meilisearch not initialized, skipping indexPart');
+      return;
+    }
+
     try {
       await this.partsIndex.addDocuments([part]);
       this.logger.debug(`Indexed part: ${part.id}`);
@@ -189,6 +209,11 @@ export class MeilisearchService implements OnModuleInit {
   async indexParts(parts: PartDocument[]): Promise<void> {
     if (parts.length === 0) return;
 
+    if (!this.partsIndex) {
+      this.logger.warn('Meilisearch not initialized, skipping bulk indexing');
+      return;
+    }
+
     try {
       // Meilisearch handles batching internally
       const task = await this.partsIndex.addDocuments(parts);
@@ -204,6 +229,11 @@ export class MeilisearchService implements OnModuleInit {
    *     Called when part is deleted or unpublished
    */
   async removePart(partId: string): Promise<void> {
+    if (!this.partsIndex) {
+      this.logger.warn('Meilisearch not initialized, skipping removePart');
+      return;
+    }
+
     try {
       await this.partsIndex.deleteDocument(partId);
       this.logger.debug(`Removed part from index: ${partId}`);
@@ -229,6 +259,20 @@ export class MeilisearchService implements OnModuleInit {
     sort?: string,
   ): Promise<PartSearchResult> {
     const startTime = Date.now();
+
+    if (!this.partsIndex) {
+      this.logger.warn('Meilisearch not initialized, returning empty search results');
+      return {
+        hits: [],
+        query,
+        processingTimeMs: 0,
+        totalHits: 0,
+        page,
+        hitsPerPage,
+        totalPages: 0,
+        isZeroResults: true,
+      };
+    }
 
     try {
       // Build filter string
@@ -350,6 +394,10 @@ export class MeilisearchService implements OnModuleInit {
    *     For monitoring and debugging
    */
   async getStats(): Promise<{ numberOfDocuments: number; isIndexing: boolean }> {
+    if (!this.partsIndex) {
+      return { numberOfDocuments: 0, isIndexing: false };
+    }
+
     try {
       const stats = await this.partsIndex.getStats();
       return {
@@ -366,6 +414,11 @@ export class MeilisearchService implements OnModuleInit {
    *     For testing or full re-index
    */
   async clearIndex(): Promise<void> {
+    if (!this.partsIndex) {
+      this.logger.warn('Meilisearch not initialized, skipping clearIndex');
+      return;
+    }
+
     try {
       await this.partsIndex.deleteAllDocuments();
       this.logger.log('Cleared all documents from parts index');
