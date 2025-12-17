@@ -32,6 +32,9 @@ jobs:
       - name: Build
         run: npm run build --if-present
 
+      - name: Test
+        run: npm test --if-present
+
   web:
     name: Web (Next.js)
     runs-on: ubuntu-latest
@@ -59,6 +62,9 @@ jobs:
         run: npm run build --if-present
         env:
           NEXT_PUBLIC_API_BASE: http://localhost:3001
+
+      - name: Test
+        run: npm test --if-present
 name: CI/CD Pipeline
 
 on:
