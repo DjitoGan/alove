@@ -27,7 +27,8 @@ lerna-debug.log*
 pnpm-debug.log*
 
 # IDEs
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo

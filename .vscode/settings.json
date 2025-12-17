@@ -1,0 +1,30 @@
+{
+  "editor.formatOnSave": true,
+  "editor.tabSize": 2,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "files.exclude": {
+    "**/.DS_Store": true,
+    "**/node_modules": true,
+    "**/dist": true
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "eslint.enable": true,
+  "eslint.alwaysShowStatus": true,
+  "prettier.requireConfig": false,
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "workbench.colorTheme": "Default Dark Modern",
+  "workbench.iconTheme": "material-icon-theme",
+  "editor.cursorSmoothCaretAnimation": "on",
+
+  "github.copilot.enable": true,
+  "github.copilot.inlineSuggest.enable": true,
+  "editor.inlineSuggest.enabled": true,
+  "github.copilot.exclude": [
+    "**/infra/**",
+    "**/*.lock",
+    "**/.env",
+    "**/.env.*",
+    "!**/.env.example",
+    "**/*.pem"
+  ]
+}
