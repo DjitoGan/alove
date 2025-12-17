@@ -83,13 +83,12 @@ export default function AuthPage() {
       localStorage.setItem('user', JSON.stringify(data.user));
 
       // [6h] Message de succès conditionnel selon le mode
-      setSuccess(mode === 'login' ? 'Connexion réussie !' : 'Inscription réussie !');
+      setSuccess(mode === 'login' ? 'Connexion réussie !' : 'Inscription réussie ! Vérifiez votre email.');
 
-      // [6i] Redirection vers le catalogue
-      //      WHY: Laisser l'utilisateur voir le message de succès 1 seconde
-      //      puis le rediriger vers l'espace principal
+      // [6i] Redirection vers verify-email après inscription, catalog après login
+      //      WHY: Forcer la vérification email après inscription
       setTimeout(() => {
-        router.push('/catalog');
+        router.push(mode === 'register' ? '/verify-email' : '/catalog');
       }, 1000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
@@ -211,6 +210,26 @@ export default function AuthPage() {
             />
             <small style={{ color: '#666', fontSize: '13px' }}>Minimum 8 caractères</small>
           </div>
+
+          {/* [7c-ii-bis] Lien mot de passe oublié en mode login */}
+          {mode === 'login' && (
+            <div style={{ marginBottom: '20px', textAlign: 'right' }}>
+              <button
+                type="button"
+                onClick={() => router.push('/forgot-password')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#667eea',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  fontSize: '14px',
+                }}
+              >
+                Mot de passe oublié ?
+              </button>
+            </div>
+          )}
 
           {/* [7c-iii] Message d'erreur en rouge */}
           {error && (
